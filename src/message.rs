@@ -1,10 +1,11 @@
 use std::io::Cursor;
 use std::mem::size_of;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitflags::bitflags;
-use bytes::{Buf, BytesMut};
-use log::debug;
+use bytes::{Buf, BufMut, BytesMut};
+use log::{debug, warn};
 use sha2::{Digest, Sha256};
 
 use crate::error::P2PError;
@@ -23,7 +24,27 @@ bitflags! {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Timestamp(u64);
+pub struct Timestamp(i64);
+impl Timestamp {
+    pub fn now() -> Timestamp {
+        let seconds = match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(d) => {
+                match d.as_secs().try_into() {
+                    Ok(s) => s,
+                    Err(_) => {
+                        warn!("system clock indicates time before Unix epoch, defaulting to Unix epoch exactly");
+                        0
+                    },
+                }
+            }
+            Err(e) => {
+                warn!("system time error - system clock before Unix epoch? Defaulting to Unix epoch exactly: {:?}", e);
+                0
+            }
+        };
+        Timestamp(seconds)
+    }
+}
 
 /// Network address without timestamp - Bitcoin spec specifies a 'timestamp' as part of a network
 ///  address, everywhere except for Version messages
@@ -36,10 +57,14 @@ pub struct NetworkAddressWithoutTimestamp {
 
 pub type Command = [u8;12];
 
+const COMMAND_VERSION: &Command = b"version\0\0\0\0\0";
+const COMMAND_VERACK: &Command = b"verack\0\0\0\0\0\0";
+
 const MESSAGE_HEADER_LEN_ON_NETWORK: usize = 4 + 12 + 4 + 4; // magic + command + length + checksum
 const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12;    // magic + command
 
 const PAYLOAD_SIZE_THRESHOLD: usize = 0x1000; //TODO make this configurable
+
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Message {
@@ -87,8 +112,8 @@ impl Message {
             None
         } else {
             match &command {
-                b"version\0\0\0\0\0" => do_parse_version(payload),
-                b"verack\0\0\0\0\0\0" => do_parse_ver_ack(payload),
+                COMMAND_VERSION => do_parse_version(payload),
+                COMMAND_VERACK => do_parse_ver_ack(payload),
                 cmd => {
                     debug!("received unknown command {:?}, skipping", cmd);
                     None
@@ -99,6 +124,51 @@ impl Message {
         result
     }
 
+    pub fn ser(&self, buf: &mut BytesMut) {
+        buf.put_u32_le(0); //TODO magic number
+        buf.put_slice(self.command_string());
+        let payload = self.payload();
+        buf.put_u32_le(payload.len().try_into().expect("Correct code can never generate a payload with a size anywhere near u32 bounds"));
+        buf.put_u32_le(hash_for_payload(&payload));
+        buf.put_slice(&payload);
+    }
+
+    fn command_string(&self) -> &'static Command {
+        match self {
+            Message::Version { .. } => COMMAND_VERSION,
+            Message::VerAck => COMMAND_VERACK,
+        }
+    }
+
+    fn payload(&self) -> Vec<u8> { //TODO avoid copying?
+        match self {
+            Message::Version { version, services, timestamp, addr_recv } => {
+                let mut result = Vec::new();
+                (&mut result).put_u32_le(*version);
+                (&mut result).put_u64_le(services.bits());
+                (&mut result).put_i64_le(timestamp.0);
+                (&mut result).put_u64_le(addr_recv.services.bits());
+                match addr_recv.addr {
+                    IpAddr::V4(addr) => {
+                        (&mut result).put_bytes(0, 12);
+                        (&mut result).put_slice(&addr.octets());
+                    },
+                    IpAddr::V6(addr) => {
+                        (&mut result).put_slice(&addr.octets());
+                    },
+                }
+                (&mut result).put_u16(addr_recv.port);
+
+                (&mut result).put_bytes(0, 26); // addr_from - safe to ignore, most implementations send dummy data
+                (&mut result).put_bytes(0, 8); // nonce - not part of the minimum set of fields, treated as out-of-scope
+                (&mut result).put_u8(0); // user agent - setting to 'empty'
+                (&mut result).put_u32_le(0); // last block received - treated as out-of-scope
+
+                result
+            }
+            Message::VerAck => vec![]
+        }
+    }
 }
 
 fn do_parse_version(payload: &[u8]) -> Option<Message> {
@@ -106,7 +176,7 @@ fn do_parse_version(payload: &[u8]) -> Option<Message> {
 
     let version = cursor.get_u32_le();
     let services = Services::from_bits_truncate(cursor.get_u64_le());
-    let timestamp = Timestamp(cursor.get_u64_le());
+    let timestamp = Timestamp(cursor.get_i64_le());
     let addr_recv = parse_network_address_without_timestamp(&mut cursor);
 
     if services != addr_recv.services {
@@ -165,6 +235,57 @@ mod test {
 
     use super::*;
 
+    #[test]
+    fn test_ser_version_v4() {
+        do_test_ser_version(IpAddr::V4(Ipv4Addr::from([51, 52, 53, 54])),
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 52, 53, 54]
+        );
+    }
+
+    #[test]
+    fn test_ser_version_v6() {
+        do_test_ser_version(
+            IpAddr::V6(Ipv6Addr::from([100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115])),
+            [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115]
+        );
+    }
+
+    fn do_test_ser_version(addr: IpAddr, addr_bytes: [u8;16]) {
+        let msg = Message::Version {
+            version: 60002,
+            services: Services::NODE_XTHIN,
+            timestamp: Timestamp(1234567),
+            addr_recv: NetworkAddressWithoutTimestamp {
+                services: Services::NODE_XTHIN,
+                addr,
+                port: 0x888,
+            },
+        };
+        let mut buf = BytesMut::new();
+        msg.ser(&mut buf);
+
+        let mut expected_payload = vec![
+            0x62, 0xEA, 0, 0,         // version
+            16, 0, 0, 0, 0, 0, 0, 0, // services
+            0x87, 0xD6, 0x12, 0, 0, 0, 0, 0,  // timestamp
+            16, 0, 0, 0, 0, 0, 0, 0, // addr_recv.services
+        ];
+        expected_payload.extend_from_slice(&addr_bytes);
+        expected_payload.extend_from_slice(&[0x08, 0x88]); // port (NB: network byte order)
+        for _ in 0..39 {
+            expected_payload.push(0);
+        }
+
+        assert_eq!(buf.chunk(), message_data(COMMAND_VERSION, None, &expected_payload));
+    }
+
+    #[test]
+    fn test_ser_verack() {
+        let mut buf = BytesMut::new();
+        Message::VerAck.ser(&mut buf);
+        assert_eq!(buf.chunk(), message_data(COMMAND_VERACK, None, &vec![]));
+    }
+
     #[rstest]
     #[case::empty(vec![], Ok(false))]
     #[case::empty              (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0, 0,0,0,0], Ok(true))]
@@ -202,10 +323,10 @@ mod test {
 
     #[test]
     fn test_parse_verack_message() {
-        assert_eq!(parse_message_data(b"verack\0\0\0\0\0\0", None, &vec![]), Some(Message::VerAck));
+        assert_eq!(parse_message_data(COMMAND_VERACK, None, &vec![]), Some(Message::VerAck));
     }
 
-    fn parse_message_data(command: &[u8], hash: Option<u32>, payload: &[u8]) -> Option<Message> {
+    fn message_data(command: &[u8], hash: Option<u32>, payload: &[u8]) -> Vec<u8> {
         let hash = hash.unwrap_or_else(|| hash_for_payload(payload));
 
         let mut buf = BytesMut::new();
@@ -214,6 +335,12 @@ mod test {
         buf.put_u32_le(payload.len() as u32);
         buf.put_u32_le(hash);
         buf.put_slice(payload);
+        buf.to_vec()
+    }
+
+    fn parse_message_data(command: &[u8], hash: Option<u32>, payload: &[u8]) -> Option<Message> {
+        let mut vec = message_data(command, hash, payload);
+        let mut buf = BytesMut::from(vec.deref());
         buf.put_slice(&vec![55, 66]);
         let result = Message::parse(&mut buf);
         assert_eq!(buf.chunk(), vec![55, 66].deref());
@@ -227,7 +354,7 @@ mod test {
 
     #[test]
     fn test_parse_wrong_hash() {
-        assert_eq!(parse_message_data(b"verack\0\0\0\0\0\0", Some(123), &vec![]), None);
+        assert_eq!(parse_message_data(COMMAND_VERACK, Some(123), &vec![]), None);
     }
 
     #[test]
