@@ -183,8 +183,8 @@ impl Message {
         result
     }
 
-    pub fn ser(&self, buf: &mut BytesMut) {
-        buf.put_u32_le(0); //TODO magic number
+    pub fn ser(&self, buf: &mut BytesMut, config: &Config) {
+        buf.put_u32_le(config.my_bitcoin_network.ser());
         buf.put_slice(self.command_string());
         let payload = self.payload();
         buf.put_u32_le(payload.len().try_into().expect("Correct code can never generate a payload with a size anywhere near u32 bounds"));
@@ -237,12 +237,6 @@ fn do_parse_version(payload: &[u8]) -> Option<Message> {
     let services = Services::from_bits_truncate(cursor.get_u64_le());
     let timestamp = Timestamp(cursor.get_i64_le());
     let addr_recv = parse_network_address_without_timestamp(&mut cursor);
-
-    if services != addr_recv.services {
-        //TODO context information in logging
-        debug!("inconsistency in received version message: services != addr_recv.services - skipping");
-        return None;
-    }
 
     Some(Message::Version {
         version,
@@ -299,19 +293,19 @@ mod test {
     #[test]
     fn test_ser_version_v4() {
         do_test_ser_version(IpAddr::V4(Ipv4Addr::from([51, 52, 53, 54])),
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 52, 53, 54]
-        );
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 52, 53, 54],
+        &test_config());
     }
 
     #[test]
     fn test_ser_version_v6() {
         do_test_ser_version(
             IpAddr::V6(Ipv6Addr::from([100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115])),
-            [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115]
-        );
+            [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115],
+        &test_config());
     }
 
-    fn do_test_ser_version(addr: IpAddr, addr_bytes: [u8;16]) {
+    fn do_test_ser_version(addr: IpAddr, addr_bytes: [u8;16], config: &Config) {
         let msg = Message::Version {
             version: BitcoinVersion(60002),
             services: Services::NODE_XTHIN,
@@ -323,7 +317,7 @@ mod test {
             },
         };
         let mut buf = BytesMut::new();
-        msg.ser(&mut buf);
+        msg.ser(&mut buf, config);
 
         let mut expected_payload = vec![
             0x62, 0xEA, 0, 0,         // version
@@ -343,7 +337,7 @@ mod test {
     #[test]
     fn test_ser_verack() {
         let mut buf = BytesMut::new();
-        Message::VerAck.ser(&mut buf);
+        Message::VerAck.ser(&mut buf, &test_config());
         assert_eq!(buf.chunk(), message_data(COMMAND_VERACK, None, &vec![]));
     }
 
@@ -361,6 +355,7 @@ mod test {
         Config {
             my_address: SocketAddr::from_str("127.0.0.1:12345").unwrap(),
             my_version: BitcoinVersion(60002),
+            my_bitcoin_network: BitcoinNetworkId::TestNetRegTest,
             my_services: Services::empty(),
             payload_size_limit: 0x10000,
         }
@@ -406,7 +401,7 @@ mod test {
         let hash = hash.unwrap_or_else(|| hash_for_payload(payload));
 
         let mut buf = BytesMut::new();
-        buf.put_u32_le(0);
+        buf.put_u32_le(test_config().my_bitcoin_network.ser());
         buf.put_slice(command);
         buf.put_u32_le(payload.len() as u32);
         buf.put_u32_le(hash);
@@ -434,7 +429,7 @@ mod test {
     }
 
     #[test]
-    fn test_parse_network_address_without_version_ipv6() { //TODO ipv4
+    fn test_parse_network_address_without_version_ipv6() {
         let data = vec![4,0,0,0,0,0,0,0, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, 4,1, 99,88];
         let mut cursor = Cursor::new(data.deref());
 

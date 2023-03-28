@@ -12,7 +12,7 @@ use p2p_node_handshake::config::Config;
 use p2p_node_handshake::connection::Connection;
 use p2p_node_handshake::error::P2PResult;
 use p2p_node_handshake::handshake::handshake;
-use p2p_node_handshake::message::{BitcoinVersion, Services};
+use p2p_node_handshake::message::{BitcoinNetworkId, BitcoinVersion, Services};
 use p2p_node_handshake::server::listen;
 
 lazy_static! {
@@ -30,6 +30,7 @@ async fn test_client_server() -> P2PResult<()>{
     let server_config = Arc::new(Config {
         my_address: SocketAddr::from_str("127.0.0.1:18001").unwrap(),
         my_version: BitcoinVersion(60000),
+        my_bitcoin_network: BitcoinNetworkId::TestNetRegTest,
         my_services: Services::NODE_XTHIN,
         payload_size_limit: 10000,
     });
@@ -41,6 +42,7 @@ async fn test_client_server() -> P2PResult<()>{
     let client_config = Arc::new(Config {
         my_address: SocketAddr::from_str("127.0.0.1:18002").unwrap(),
         my_version: BitcoinVersion(60001),
+        my_bitcoin_network: BitcoinNetworkId::TestNetRegTest,
         my_services: Services::NODE_NETWORK,
         payload_size_limit: 10000,
     });

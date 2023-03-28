@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicBool, Ordering};
+use log::debug;
 use tokio::sync::Mutex;
 use crate::connection::Connection;
 use crate::error::P2PResult;
@@ -44,10 +45,12 @@ pub async fn handshake(connection: &mut Connection) -> P2PResult<Option<Negotiat
         if verack_received.load(Ordering::Acquire) {
             let lock = peer_info.lock().await;
             if let Some((version, services)) = lock.as_ref() {
-                return Ok(Some(NegotiatedVersion {
+                let result = NegotiatedVersion {
                     peer_version: *version,
                     peer_services: *services,
-                }));
+                };
+                debug!("client-side handshake completed - peer version data is {:?}", result);
+                return Ok(Some(result));
             }
         }
     }

@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use log::info;
 use tokio::net::TcpListener;
-use tokio::sync::Notify;
 use tokio::sync::oneshot;
 
 use crate::config::Config;

@@ -64,7 +64,7 @@ impl Connection { //TODO test
     }
 
     pub async fn send(&mut self, message: &Message) -> P2PResult<()> {
-        message.ser(&mut self.write_buffer);
+        message.ser(&mut self.write_buffer, self.config.as_ref());
         self.socket.write_all_buf(&mut self.write_buffer).await?;
         //TODO mark connection as broken on I/O error
         Ok(())
