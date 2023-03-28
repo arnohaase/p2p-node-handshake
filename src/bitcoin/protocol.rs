@@ -27,12 +27,12 @@ impl FourWayHandshakeProtocol for BitcoinProtocol {
 
     fn version_message(connection: &Connection<Self>) -> Self::Message {
         BitcoinMessage::Version {
-            version: connection.config.my_version,
-            services: connection.config.my_services,
+            version: connection.config().my_version,
+            services: connection.config().my_services,
             timestamp: Timestamp::now(),
             addr_recv: NetworkAddressWithoutTimestamp::new(
-                &connection.peer_address,
-                connection.config.as_ref(),
+                &connection.peer_address(),
+                connection.config(),
             ),
         }
     }

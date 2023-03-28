@@ -74,7 +74,7 @@ pub async fn four_way_handshake<P: FourWayHandshakeProtocol>(connection: &mut Co
 
         let lock = received_extracts.lock().await;
         if let (Some(version_extract), Some(ack_extract)) = (&lock.0, &lock.1) {
-            let result = P::negotiation_result(connection.config.as_ref(), version_extract, ack_extract);
+            let result = P::negotiation_result(connection.config(), version_extract, ack_extract);
             debug!("client-side handshake completed - negotiated meta data is {:?}", result);
             return Ok(Some(result));
         }

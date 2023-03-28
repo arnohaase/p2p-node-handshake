@@ -1,11 +1,13 @@
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::BytesMut;
-use log::debug;
+use log::{debug, error, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
+use tokio::time::sleep;
 
 use crate::generic::protocol::{P2PConfig, P2PError, P2PMessage, P2PProtocol};
 
@@ -13,9 +15,14 @@ pub struct Connection<P: P2PProtocol> {
     socket: TcpStream,
     read_buffer: BytesMut,
     write_buffer: BytesMut,
-    pub peer_address: SocketAddr,
-    pub config: Arc<P::Config>, //TODO documentation this is passed around because it is fixed
+    peer_address: SocketAddr,
+    config: Arc<P::Config>, //TODO documentation this is passed around because it is fixed
+    num_sent: u64,
+    num_received: u64,
     pd: PhantomData<P>,
+    /// For robustness - if calling code ignores errors (especially when sending messages),
+    ///  the write buffer can grow in an unbounded way. This flag is a safeguard against that.
+    is_broken: bool,
 }
 impl <P: P2PProtocol> Connection<P> {
     pub fn new(socket: TcpStream, peer_address: SocketAddr, config: Arc<P::Config>) -> Connection<P> {
@@ -26,7 +33,17 @@ impl <P: P2PProtocol> Connection<P> {
             peer_address,
             config,
             pd: Default::default(),
+            num_sent: 0,
+            num_received: 0,
+            is_broken: false,
         }
+    }
+
+    pub fn peer_address(&self) -> &SocketAddr {
+        &self.peer_address
+    }
+    pub fn config(&self) -> &P::Config {
+        self.config.as_ref()
     }
 
     pub async fn connect(addr: SocketAddr, config: Arc<P::Config>) -> Result<Connection<P>, P::Error> {
@@ -54,6 +71,7 @@ impl <P: P2PProtocol> Connection<P> {
 
     fn parse_message(&mut self) -> Result<Option<P::Message>, P::Error> {
         while P::Message::has_complete_message(self.read_buffer.as_ref(), self.config.as_ref())? {
+            self.num_received += 1;
             if let Some(message) = P::Message::parse_message(&mut self.read_buffer, self.config.as_ref()) {
                 return Ok(Some(message));
             }
@@ -63,8 +81,31 @@ impl <P: P2PProtocol> Connection<P> {
 
     ///TODO an error may leave the connection in an inconsistent state - caller should clean up
     pub async fn send(&mut self, message: &P::Message) -> Result<(), P::Error> {
+        if self.is_broken {
+            error!("A previoius network error sending data to {} left the connection in a \
+            potentially inconsistent state. Trying to send messages over this connection is\
+            a bug, please fix your code to reconnect after a send error", self.peer_address);
+            return Err(P::Error::connection_reset_by_peer());
+        }
+
         message.ser(&mut self.write_buffer, self.config.as_ref());
-        self.socket.write_all_buf(&mut self.write_buffer).await?;
+        if let Err(e) = self.socket.write_all_buf(&mut self.write_buffer).await {
+            self.is_broken = true;
+            return Err(e.into());
+        }
+        self.num_sent += 1;
         Ok(())
+    }
+
+    pub fn dump_statistics(&self, connection_name: &str) {
+        debug!("connection statistics for {}: {} msg sent, {} msg received, read buffer: {}/{}, write_buffer: {}/{}",
+            connection_name,
+            self.num_sent,
+            self.num_received,
+            self.read_buffer.len(),
+            self.read_buffer.capacity(),
+            self.write_buffer.len(),
+            self.write_buffer.capacity(),
+        )
     }
 }

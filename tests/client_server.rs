@@ -1,18 +1,21 @@
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::time::Duration;
 
 use lazy_static::lazy_static;
 use log::{info, LevelFilter};
 use simple_logger::SimpleLogger;
-use tokio::sync::oneshot;
 use tokio::sync::Notify;
+use tokio::sync::oneshot;
+use tokio::time::sleep;
+
 use p2p_node_handshake::bitcoin::config::BitcoinConfig;
 use p2p_node_handshake::bitcoin::error::BitcoinResult;
 use p2p_node_handshake::bitcoin::protocol::BitcoinProtocol;
 use p2p_node_handshake::bitcoin::types::{BitcoinNetworkId, BitcoinVersion, Services};
 use p2p_node_handshake::generic::connection::Connection;
-use p2p_node_handshake::generic::four_way_handshake::four_way_handshake;
+use p2p_node_handshake::generic::four_way_handshake::*;
 use p2p_node_handshake::generic::protocol::GenericP2PConfig;
 use p2p_node_handshake::generic::server;
 
@@ -58,6 +61,8 @@ async fn test_client_server() -> BitcoinResult<()> {
 
     SERVER_HANDSHAKE_COMPLETE.notified().await;
 
+    client.dump_statistics("client");
+
     Ok(())
 }
 
@@ -66,4 +71,5 @@ async fn on_server_connection(server_connection: Connection<BitcoinProtocol>) {
     let negotiated = four_way_handshake(&mut server_connection).await.unwrap();
     info!("server handshake completed: {:#?}", negotiated);
     SERVER_HANDSHAKE_COMPLETE.notify_waiters();
+    server_connection.dump_statistics("server");
 }
