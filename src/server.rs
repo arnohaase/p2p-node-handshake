@@ -21,7 +21,11 @@ use crate::error::P2PResult;
 ///  aspects like limiting the number of connections, clean shutdown, exponential backoff or
 ///  verifying that the network address from listener.accept matches the one in P2P messages as
 ///  out-of-scope.
-pub async fn listen<F, Fut>(on_connect: F, is_running: oneshot::Sender<()>, config: Arc<Config>) -> P2PResult<()>
+pub async fn listen<F, Fut>(
+    on_connect: F,
+    is_running: oneshot::Sender<()>,
+    config: Arc<Config>,
+) -> P2PResult<()>
 where
     F: Fn(Connection) -> Fut,
     Fut: Future<Output = ()> + Send + 'static,
@@ -32,25 +36,19 @@ where
     Ok(())
 }
 
-struct Listener<
-    F: Fn(Connection) -> Fut,
-    Fut: Future<Output=()> + Send + 'static,
->  {
+struct Listener<F: Fn(Connection) -> Fut, Fut: Future<Output = ()> + Send + 'static> {
     listener: TcpListener,
     on_connect: F,
     config: Arc<Config>,
 }
 
-impl<
-    F: Fn(Connection) -> Fut,
-    Fut: Future<Output=()> + Send + 'static,
-> Listener<F, Fut> {
+impl<F: Fn(Connection) -> Fut, Fut: Future<Output = ()> + Send + 'static> Listener<F, Fut> {
     async fn new(on_connect: F, config: Arc<Config>) -> P2PResult<Listener<F, Fut>> {
         info!("listening for connections on {}", config.my_address);
         Ok(Listener {
             listener: TcpListener::bind(config.my_address).await?,
             on_connect,
-            config
+            config,
         })
     }
 
@@ -63,12 +61,10 @@ impl<
     }
 }
 
-impl<
-    F: Fn(Connection) -> Fut,
-    Fut: Future<Output=()> + Send + 'static,
-> Drop for Listener<F, Fut> {
+impl<F: Fn(Connection) -> Fut, Fut: Future<Output = ()> + Send + 'static> Drop
+    for Listener<F, Fut>
+{
     fn drop(&mut self) {
         info!("shutting down TCP listener")
     }
 }
-

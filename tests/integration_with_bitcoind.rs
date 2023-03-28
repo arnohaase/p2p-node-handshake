@@ -15,7 +15,7 @@ use p2p_node_handshake::message::{BitcoinNetworkId, BitcoinVersion, Services};
 
 #[ignore = "requires a running bitcoind - run manually. See README.md for details"]
 #[tokio::test]
-async fn test_with_bitcoind() -> P2PResult<()>{
+async fn test_with_bitcoind() -> P2PResult<()> {
     SimpleLogger::new()
         .with_level(LevelFilter::Trace)
         .with_colors(true)
@@ -31,7 +31,11 @@ async fn test_with_bitcoind() -> P2PResult<()>{
         read_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
         write_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
     });
-    let mut client = Connection::connect(SocketAddr::from_str("127.0.0.1:18445").unwrap(), client_config).await?;
+    let mut client = Connection::connect(
+        SocketAddr::from_str("127.0.0.1:18445").unwrap(),
+        client_config,
+    )
+    .await?;
     let _negotiated = handshake(&mut client).await?;
     info!("handshake with bitcoind successful");
 

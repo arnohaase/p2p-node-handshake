@@ -7,15 +7,14 @@ pub enum P2PError {
     #[error("The message is way bigger than any legal message as specified in the protocol. This is \
     treated as a protocol violation and potential DoS attack, causing the entire connection to be dropped.")]
     MessageTooBig,
-    #[error("The remote magic number {remote:#08x} does not match the local magic number {local:#08x}")]
-    MagicMismatch {
-        local: u32,
-        remote: u32,
-    },
+    #[error(
+        "The remote magic number {remote:#08x} does not match the local magic number {local:#08x}"
+    )]
+    MagicMismatch { local: u32, remote: u32 },
     #[error("Connection reset by peer")]
     ConnectionResetByPeer,
     #[error("I/O error: {0}")]
-    Io(std::io::Error)
+    Io(std::io::Error),
 }
 
 impl From<std::io::Error> for P2PError {

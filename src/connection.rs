@@ -5,8 +5,8 @@ use bytes::BytesMut;
 use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use crate::config::Config;
 
+use crate::config::Config;
 use crate::error::{P2PError, P2PResult};
 use crate::message::Message;
 
@@ -17,7 +17,8 @@ pub struct Connection {
     pub peer_address: SocketAddr,
     pub config: Arc<Config>, //TODO documentation this is passed around because it is fixed
 }
-impl Connection { //TODO test
+impl Connection {
+    //TODO test
     pub fn new(socket: TcpStream, peer_address: SocketAddr, config: Arc<Config>) -> Connection {
         Connection {
             socket,
@@ -44,8 +45,7 @@ impl Connection { //TODO test
                 // 'eof', i.e. connection closed
                 if self.read_buffer.is_empty() {
                     return Ok(None);
-                }
-                else {
+                } else {
                     return Err(P2PError::ConnectionResetByPeer);
                 }
             }

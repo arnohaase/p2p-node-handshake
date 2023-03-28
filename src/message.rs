@@ -23,7 +23,7 @@ impl BitcoinNetworkId {
     const MAIN: u32 = 0xD9B4BEF9;
     const TESTNET_REGTEST: u32 = 0xDAB5BFFA;
     const TESTNET3: u32 = 0x0709110B;
-    const SIGNET: u32 =0x40CF030A;
+    const SIGNET: u32 = 0x40CF030A;
     const NAMECOIN: u32 = 0xFEB4BEF9;
 
     fn ser(&self) -> u32 {
@@ -80,15 +80,13 @@ pub struct Timestamp(i64);
 impl Timestamp {
     pub fn now() -> Timestamp {
         let seconds = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(d) => {
-                match d.as_secs().try_into() {
-                    Ok(s) => s,
-                    Err(_) => {
-                        warn!("system clock indicates time before Unix epoch, defaulting to Unix epoch exactly");
-                        0
-                    },
+            Ok(d) => match d.as_secs().try_into() {
+                Ok(s) => s,
+                Err(_) => {
+                    warn!("system clock indicates time before Unix epoch, defaulting to Unix epoch exactly");
+                    0
                 }
-            }
+            },
             Err(e) => {
                 warn!("system time error - system clock before Unix epoch? Defaulting to Unix epoch exactly: {:?}", e);
                 0
@@ -130,14 +128,13 @@ impl Command {
     }
 }
 
-pub type CommandId = [u8;12];
+pub type CommandId = [u8; 12];
 
 const COMMAND_VERSION: &[u8] = b"version\0\0\0\0\0";
-const COMMAND_VERACK:  &[u8] = b"verack\0\0\0\0\0\0";
+const COMMAND_VERACK: &[u8] = b"verack\0\0\0\0\0\0";
 
 const MESSAGE_HEADER_LEN_ON_NETWORK: usize = 4 + 12 + 4 + 4; // magic + command + length + checksum
-const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12;    // magic + command
-
+const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12; // magic + command
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Message {
@@ -155,7 +152,10 @@ impl Message {
         if buf.len() < MESSAGE_HEADER_LEN_ON_NETWORK {
             return Ok(false);
         }
-        let payload_len: usize = (&buf[MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH..]).get_u32_le().try_into().expect("<32 bit architecture not supported");
+        let payload_len: usize = (&buf[MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH..])
+            .get_u32_le()
+            .try_into()
+            .expect("<32 bit architecture not supported");
         if payload_len > config.payload_size_limit {
             return Err(P2PError::MessageTooBig);
         }
@@ -172,7 +172,10 @@ impl Message {
 
         buf.advance(size_of::<CommandId>());
 
-        let payload_len: usize = buf.get_u32_le().try_into().expect("<32 bit architecture not supported");
+        let payload_len: usize = buf
+            .get_u32_le()
+            .try_into()
+            .expect("<32 bit architecture not supported");
         let checksum = buf.get_u32_le();
 
         // implementation: decouple buffer advancement from payload handling - we want to advance
@@ -206,7 +209,9 @@ impl Message {
         buf.put_u32_le(config.my_bitcoin_network.ser());
         buf.put_slice(self.command_string());
         let payload = self.payload();
-        buf.put_u32_le(payload.len().try_into().expect("Correct code can never generate a payload with a size anywhere near u32 bounds"));
+        buf.put_u32_le(payload.len().try_into().expect(
+            "Correct code can never generate a payload with a size anywhere near u32 bounds",
+        ));
         buf.put_u32_le(hash_for_payload(&payload));
         buf.put_slice(&payload);
     }
@@ -218,9 +223,15 @@ impl Message {
         }
     }
 
-    fn payload(&self) -> Vec<u8> { //TODO avoid copying?
+    fn payload(&self) -> Vec<u8> {
+        //TODO avoid copying?
         match self {
-            Message::Version { version, services, timestamp, addr_recv } => {
+            Message::Version {
+                version,
+                services,
+                timestamp,
+                addr_recv,
+            } => {
                 let mut result = Vec::new();
                 (&mut result).put_u32_le(version.into());
                 (&mut result).put_u64_le(services.bits());
@@ -230,10 +241,10 @@ impl Message {
                     IpAddr::V4(addr) => {
                         (&mut result).put_bytes(0, 12);
                         (&mut result).put_slice(&addr.octets());
-                    },
+                    }
                     IpAddr::V6(addr) => {
                         (&mut result).put_slice(&addr.octets());
-                    },
+                    }
                 }
                 (&mut result).put_u16(addr_recv.port);
 
@@ -244,7 +255,7 @@ impl Message {
 
                 result
             }
-            Message::VerAck => vec![]
+            Message::VerAck => vec![],
         }
     }
 }
@@ -265,15 +276,17 @@ fn do_parse_version(payload: &[u8]) -> Option<Message> {
     })
 }
 
-fn parse_network_address_without_timestamp(data: &mut Cursor<&[u8]>) -> NetworkAddressWithoutTimestamp {
+fn parse_network_address_without_timestamp(
+    data: &mut Cursor<&[u8]>,
+) -> NetworkAddressWithoutTimestamp {
     let services = Services::from_bits_truncate(data.get_u64_le());
 
     let addr_raw = &data.chunk()[..16];
     let addr = if addr_raw.starts_with(b"\0\0\0\0\0\0\0\0\0\0\0\0") {
-        let octets: [u8;4] = (&addr_raw[12..]).try_into().unwrap();
+        let octets: [u8; 4] = (&addr_raw[12..]).try_into().unwrap();
         IpAddr::V4(Ipv4Addr::from(octets))
     } else {
-        let octets: [u8;16] = addr_raw.try_into().unwrap();
+        let octets: [u8; 16] = addr_raw.try_into().unwrap();
         IpAddr::V6(Ipv6Addr::from(octets))
     };
     data.advance(16);
@@ -284,7 +297,7 @@ fn parse_network_address_without_timestamp(data: &mut Cursor<&[u8]>) -> NetworkA
     NetworkAddressWithoutTimestamp {
         services,
         addr,
-        port
+        port,
     }
 }
 
@@ -311,20 +324,27 @@ mod test {
 
     #[test]
     fn test_ser_version_v4() {
-        do_test_ser_version(IpAddr::V4(Ipv4Addr::from([51, 52, 53, 54])),
-        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 52, 53, 54],
-        &test_config());
+        do_test_ser_version(
+            IpAddr::V4(Ipv4Addr::from([51, 52, 53, 54])),
+            [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 51, 52, 53, 54],
+            &test_config(),
+        );
     }
 
     #[test]
     fn test_ser_version_v6() {
         do_test_ser_version(
-            IpAddr::V6(Ipv6Addr::from([100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115])),
-            [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115],
-        &test_config());
+            IpAddr::V6(Ipv6Addr::from([
+                100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
+            ])),
+            [
+                100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115,
+            ],
+            &test_config(),
+        );
     }
 
-    fn do_test_ser_version(addr: IpAddr, addr_bytes: [u8;16], config: &Config) {
+    fn do_test_ser_version(addr: IpAddr, addr_bytes: [u8; 16], config: &Config) {
         let msg = Message::Version {
             version: BitcoinVersion(60002),
             services: Services::NODE_XTHIN,
@@ -339,9 +359,9 @@ mod test {
         msg.ser(&mut buf, config);
 
         let mut expected_payload = vec![
-            0x62, 0xEA, 0, 0,         // version
+            0x62, 0xEA, 0, 0, // version
             16, 0, 0, 0, 0, 0, 0, 0, // services
-            0x87, 0xD6, 0x12, 0, 0, 0, 0, 0,  // timestamp
+            0x87, 0xD6, 0x12, 0, 0, 0, 0, 0, // timestamp
             16, 0, 0, 0, 0, 0, 0, 0, // addr_recv.services
         ];
         expected_payload.extend_from_slice(&addr_bytes);
@@ -350,14 +370,20 @@ mod test {
             expected_payload.push(0);
         }
 
-        assert_eq!(buf.chunk(), message_data(None, COMMAND_VERSION, None, &expected_payload));
+        assert_eq!(
+            buf.chunk(),
+            message_data(None, COMMAND_VERSION, None, &expected_payload)
+        );
     }
 
     #[test]
     fn test_ser_verack() {
         let mut buf = BytesMut::new();
         Message::VerAck.ser(&mut buf, &test_config());
-        assert_eq!(buf.chunk(), message_data(None, COMMAND_VERACK, None, &vec![]));
+        assert_eq!(
+            buf.chunk(),
+            message_data(None, COMMAND_VERACK, None, &vec![])
+        );
     }
 
     #[rstest]
@@ -367,7 +393,10 @@ mod test {
     #[case::complete_payload   (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 1,0,0,0, 0,0,0,0, 65], true)]
     #[case::not_too_long       (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x00,0x10,0,0, 0,0,0,0], false)]
     fn test_message_has_complete_message(#[case] buf: Vec<u8>, #[case] expected: bool) {
-        assert_eq!(Message::has_complete_message(&buf, &test_config()).unwrap(), expected);
+        assert_eq!(
+            Message::has_complete_message(&buf, &test_config()).unwrap(),
+            expected
+        );
     }
 
     fn test_config() -> Config {
@@ -384,41 +413,60 @@ mod test {
 
     #[test]
     fn test_message_has_complete_message_too_big() {
-        let result = Message::has_complete_message(&vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x01,0x10,0,0, 0,0,0,0], &test_config());
-        assert!(matches!(Err::<bool, P2PError>(P2PError::MessageTooBig), result));
+        let result = Message::has_complete_message(
+            &vec![
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x10, 0, 0, 0, 0, 0, 0,
+            ],
+            &test_config(),
+        );
+        assert!(matches!(
+            Err::<bool, P2PError>(P2PError::MessageTooBig),
+            result
+        ));
     }
 
     /// This is test data from the Bitcoin protocol documentation
     #[test]
     fn test_parse_version_message() {
         let payload = vec![
-            0x62, 0xEA, 0, 0,
-            1, 0, 0, 0, 0, 0, 0, 0,
-            0x11, 0xB2, 0xD0, 0x50, 0, 0, 0, 0,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0,
-            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0,
-            0x3B, 0x2E, 0xB3, 0x5D, 0x8C, 0xE6, 0x17, 0x65,
-            0x0F, 0x2F, 0x53, 0x61, 0x74, 0x6F, 0x73, 0x68, 0x69, 0x3A, 0x30, 0x2E, 0x37, 0x2E, 0x32, 0x2F,
-            0xC0, 0x3E, 0x03, 0x00];
+            0x62, 0xEA, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0x11, 0xB2, 0xD0, 0x50, 0, 0, 0, 0, 1, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0, 0, 0, 0x3B, 0x2E,
+            0xB3, 0x5D, 0x8C, 0xE6, 0x17, 0x65, 0x0F, 0x2F, 0x53, 0x61, 0x74, 0x6F, 0x73, 0x68,
+            0x69, 0x3A, 0x30, 0x2E, 0x37, 0x2E, 0x32, 0x2F, 0xC0, 0x3E, 0x03, 0x00,
+        ];
 
-        assert_eq!(parse_message_data(None, b"version\0\0\0\0\0", None, &payload), Some(Message::Version {
-            version: BitcoinVersion(0x0000EA62),
-            services: Services::NODE_NETWORK,
-            timestamp: Timestamp(0x50D0B211),
-            addr_recv: NetworkAddressWithoutTimestamp {
+        assert_eq!(
+            parse_message_data(None, b"version\0\0\0\0\0", None, &payload),
+            Some(Message::Version {
+                version: BitcoinVersion(0x0000EA62),
                 services: Services::NODE_NETWORK,
-                addr: IpAddr::V6(Ipv6Addr::from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0])),
-                port: 0,
-            },
-        }));
+                timestamp: Timestamp(0x50D0B211),
+                addr_recv: NetworkAddressWithoutTimestamp {
+                    services: Services::NODE_NETWORK,
+                    addr: IpAddr::V6(Ipv6Addr::from([
+                        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xFF, 0xFF, 0, 0, 0, 0
+                    ])),
+                    port: 0,
+                },
+            })
+        );
     }
 
     #[test]
     fn test_parse_verack_message() {
-        assert_eq!(parse_message_data(None, COMMAND_VERACK, None, &vec![]), Some(Message::VerAck));
+        assert_eq!(
+            parse_message_data(None, COMMAND_VERACK, None, &vec![]),
+            Some(Message::VerAck)
+        );
     }
 
-    fn message_data(magic: Option<u32>, command: &[u8], hash: Option<u32>, payload: &[u8]) -> Vec<u8> {
+    fn message_data(
+        magic: Option<u32>,
+        command: &[u8],
+        hash: Option<u32>,
+        payload: &[u8],
+    ) -> Vec<u8> {
         let magic = magic.unwrap_or(test_config().my_bitcoin_network.ser());
         let hash = hash.unwrap_or_else(|| hash_for_payload(payload));
 
@@ -431,7 +479,12 @@ mod test {
         buf.to_vec()
     }
 
-    fn parse_message_data(magic: Option<u32>, command: &[u8], hash: Option<u32>, payload: &[u8]) -> Option<Message> {
+    fn parse_message_data(
+        magic: Option<u32>,
+        command: &[u8],
+        hash: Option<u32>,
+        payload: &[u8],
+    ) -> Option<Message> {
         let vec = message_data(magic, command, hash, payload);
         let mut buf = BytesMut::from(vec.deref());
         buf.put_slice(&vec![55, 66]);
@@ -442,46 +495,68 @@ mod test {
 
     #[test]
     fn test_parse_unknown_command() {
-        assert_eq!(parse_message_data(None, b"other\0\0\0\0\0\0\0", None, &vec![]), None);
+        assert_eq!(
+            parse_message_data(None, b"other\0\0\0\0\0\0\0", None, &vec![]),
+            None
+        );
     }
 
     #[test]
     fn test_parse_wrong_hash() {
-        assert_eq!(parse_message_data(None, COMMAND_VERACK, Some(123), &vec![]), None);
+        assert_eq!(
+            parse_message_data(None, COMMAND_VERACK, Some(123), &vec![]),
+            None
+        );
     }
 
     #[test]
     fn test_parse_magic_mismatch() {
-        assert_eq!(parse_message_data(Some(123), COMMAND_VERACK, Some(123), &vec![]), None);
+        assert_eq!(
+            parse_message_data(Some(123), COMMAND_VERACK, Some(123), &vec![]),
+            None
+        );
     }
 
     #[test]
     fn test_parse_network_address_without_version_ipv6() {
-        let data = vec![4,0,0,0,0,0,0,0, 0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15, 4,1, 99,88];
+        let data = vec![
+            4, 0, 0, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 4, 1, 99,
+            88,
+        ];
         let mut cursor = Cursor::new(data.deref());
 
         let parsed = parse_network_address_without_timestamp(&mut cursor);
-        assert_eq!(parsed, NetworkAddressWithoutTimestamp {
-            services: Services::NODE_BLOOM,
-            addr: IpAddr::V6(Ipv6Addr::from([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15])),
-            port: 1025,
-        });
+        assert_eq!(
+            parsed,
+            NetworkAddressWithoutTimestamp {
+                services: Services::NODE_BLOOM,
+                addr: IpAddr::V6(Ipv6Addr::from([
+                    0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+                ])),
+                port: 1025,
+            }
+        );
 
         assert_eq!(cursor.chunk(), &vec![99, 88]);
     }
 
     #[test]
     fn test_parse_network_address_without_version_ipv4() {
-        let data = vec![4,0,0,0,0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0,5,6,7,8, 4,1, 99,88];
+        let data = vec![
+            4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 6, 7, 8, 4, 1, 99, 88,
+        ];
         let slice: &[u8] = &data;
         let mut cursor = Cursor::new(slice);
 
         let parsed = parse_network_address_without_timestamp(&mut cursor);
-        assert_eq!(parsed, NetworkAddressWithoutTimestamp {
-            services: Services::NODE_BLOOM,
-            addr: IpAddr::V4(Ipv4Addr::from([5, 6, 7, 8])),
-            port: 1025,
-        });
+        assert_eq!(
+            parsed,
+            NetworkAddressWithoutTimestamp {
+                services: Services::NODE_BLOOM,
+                addr: IpAddr::V4(Ipv4Addr::from([5, 6, 7, 8])),
+                port: 1025,
+            }
+        );
 
         assert_eq!(cursor.chunk(), &vec![99, 88]);
     }

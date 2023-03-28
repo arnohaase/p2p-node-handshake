@@ -7,7 +7,6 @@ pub mod handshake;
 pub mod message;
 pub mod server;
 
-
 #[cfg(test)]
 #[ctor::ctor]
 /// enable logging in test code

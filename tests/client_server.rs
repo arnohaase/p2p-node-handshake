@@ -5,8 +5,8 @@ use std::sync::Arc;
 use lazy_static::lazy_static;
 use log::{info, LevelFilter};
 use simple_logger::SimpleLogger;
-use tokio::sync::Notify;
 use tokio::sync::oneshot;
+use tokio::sync::Notify;
 
 use p2p_node_handshake::config::Config;
 use p2p_node_handshake::connection::Connection;
@@ -20,7 +20,7 @@ lazy_static! {
 }
 
 #[tokio::test]
-async fn test_client_server() -> P2PResult<()>{
+async fn test_client_server() -> P2PResult<()> {
     SimpleLogger::new()
         .with_level(LevelFilter::Trace)
         .with_colors(true)
@@ -39,7 +39,11 @@ async fn test_client_server() -> P2PResult<()>{
 
     let (server_running_sender, server_running_receiver) = oneshot::channel();
 
-    tokio::spawn(listen(on_server_connection, server_running_sender, Arc::clone(&server_config)));
+    tokio::spawn(listen(
+        on_server_connection,
+        server_running_sender,
+        Arc::clone(&server_config),
+    ));
 
     let client_config = Arc::new(Config {
         my_address: SocketAddr::from_str("127.0.0.1:18002").unwrap(),
