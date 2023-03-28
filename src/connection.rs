@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use bytes::BytesMut;
+use log::debug;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use crate::config::Config;
@@ -28,6 +29,7 @@ impl Connection { //TODO test
     }
 
     pub async fn connect(addr: SocketAddr, config: Arc<Config>) -> P2PResult<Connection> {
+        debug!("connecting to {}", addr);
         let socket = TcpStream::connect(addr).await?;
         Ok(Connection::new(socket, addr, config))
     }

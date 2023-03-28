@@ -2,10 +2,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 use crate::connection::Connection;
 use crate::error::P2PResult;
-use crate::message::{Message, NetworkAddressWithoutTimestamp, Services, Timestamp, Version};
+use crate::message::{Message, NetworkAddressWithoutTimestamp, Services, Timestamp, BitcoinVersion};
 
+#[derive(Debug)]
 pub struct NegotiatedVersion { //TODO better name?
-    pub peer_version: Version,
+    pub peer_version: BitcoinVersion,
     pub peer_services: Services,
 }
 
