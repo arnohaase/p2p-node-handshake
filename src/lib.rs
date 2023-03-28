@@ -1,12 +1,7 @@
 #![warn(missing_docs, rust_2018_idioms)]
 
-pub mod config;
-pub mod connection;
-pub mod error;
-pub mod handshake;
-pub mod message;
-pub mod server;
-pub mod types;
+pub mod bitcoin;
+pub mod generic;
 
 #[cfg(test)]
 #[ctor::ctor]

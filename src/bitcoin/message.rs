@@ -6,9 +6,11 @@ use bytes::{Buf, BufMut, BytesMut};
 use log::{debug, warn};
 use sha2::{Digest, Sha256};
 
-use crate::config::Config;
-use crate::error::P2PError;
-use crate::types::*;
+use crate::bitcoin::config::*;
+use crate::bitcoin::error::{BitcoinError, BitcoinResult};
+use crate::bitcoin::protocol::BitcoinProtocol;
+use crate::bitcoin::types::*;
+use crate::generic::protocol::P2PMessage;
 
 /// Network address without timestamp - Bitcoin spec specifies a 'timestamp' as part of a network
 ///  address, everywhere except for Version messages
@@ -19,7 +21,7 @@ pub struct NetworkAddressWithoutTimestamp {
     pub port: u16,
 }
 impl NetworkAddressWithoutTimestamp {
-    pub fn new(peer_addr: &SocketAddr, config: &Config) -> NetworkAddressWithoutTimestamp {
+    pub fn new(peer_addr: &SocketAddr, config: &BitcoinConfig) -> NetworkAddressWithoutTimestamp {
         NetworkAddressWithoutTimestamp {
             services: config.my_services,
             addr: peer_addr.ip(),
@@ -32,7 +34,7 @@ const MESSAGE_HEADER_LEN_ON_NETWORK: usize = 4 + 12 + 4 + 4; // magic + command 
 const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12; // magic + command
 
 #[derive(Debug, Eq, PartialEq, Clone)]
-pub enum Message {
+pub enum BitcoinMessage {
     Version {
         version: BitcoinVersion,
         services: Services,
@@ -41,9 +43,53 @@ pub enum Message {
     },
     VerAck,
 }
-impl Message {
-    //TODO documentation
-    pub fn has_complete_message(buf: &[u8], config: &Config) -> Result<bool, P2PError> {
+impl BitcoinMessage {
+    fn command_string(&self) -> &'static [u8] {
+        match self {
+            BitcoinMessage::Version { .. } => COMMAND_VERSION,
+            BitcoinMessage::VerAck => COMMAND_VERACK,
+        }
+    }
+
+    fn payload(&self) -> Vec<u8> {
+        //TODO avoid copying?
+        match self {
+            BitcoinMessage::Version {
+                version,
+                services,
+                timestamp,
+                addr_recv,
+            } => {
+                let mut result = Vec::new();
+                (&mut result).put_u32_le(version.into());
+                (&mut result).put_u64_le(services.bits());
+                (&mut result).put_i64_le(timestamp.ser());
+                (&mut result).put_u64_le(addr_recv.services.bits());
+                match addr_recv.addr {
+                    IpAddr::V4(addr) => {
+                        (&mut result).put_bytes(0, 12);
+                        (&mut result).put_slice(&addr.octets());
+                    }
+                    IpAddr::V6(addr) => {
+                        (&mut result).put_slice(&addr.octets());
+                    }
+                }
+                (&mut result).put_u16(addr_recv.port);
+
+                (&mut result).put_bytes(0, 26); // addr_from - safe to ignore, most implementations send dummy data
+                (&mut result).put_bytes(0, 8); // nonce - not part of the minimum set of fields, treated as out-of-scope
+                (&mut result).put_u8(0); // user agent - setting to 'empty'
+                (&mut result).put_u32_le(0); // last block received - treated as out-of-scope
+
+                result
+            }
+            BitcoinMessage::VerAck => vec![],
+        }
+    }
+}
+
+impl P2PMessage<BitcoinProtocol> for BitcoinMessage {
+    fn has_complete_message(buf: &[u8], config: &BitcoinConfig) -> BitcoinResult<bool> {
         if buf.len() < MESSAGE_HEADER_LEN_ON_NETWORK {
             return Ok(false);
         }
@@ -52,14 +98,14 @@ impl Message {
             .try_into()
             .expect("<32 bit architecture not supported");
         if payload_len > config.payload_size_limit {
-            return Err(P2PError::MessageTooBig);
+            return Err(BitcoinError::MessageTooBig);
         }
         Ok(buf.len() >= MESSAGE_HEADER_LEN_ON_NETWORK + payload_len)
     }
 
     /// todo documentation: assumes that the buffer contains an entire message, panicking otherwise
     /// todo  always consumes a message, returning None if the message was not recognized
-    pub fn parse(buf: &mut BytesMut, config: &Config) -> Option<Message> {
+    fn parse_message(buf: &mut BytesMut, config: &BitcoinConfig) -> Option<Self> {
         let magic = buf.get_u32_le();
 
         let command_id = &buf[..size_of::<CommandId>()];
@@ -100,7 +146,7 @@ impl Message {
         result
     }
 
-    pub fn ser(&self, buf: &mut BytesMut, config: &Config) {
+    fn ser(&self, buf: &mut BytesMut, config: &BitcoinConfig) {
         buf.put_u32_le(config.my_bitcoin_network.ser());
         buf.put_slice(self.command_string());
         let payload = self.payload();
@@ -110,52 +156,9 @@ impl Message {
         buf.put_u32_le(hash_for_payload(&payload));
         buf.put_slice(&payload);
     }
-
-    fn command_string(&self) -> &'static [u8] {
-        match self {
-            Message::Version { .. } => COMMAND_VERSION,
-            Message::VerAck => COMMAND_VERACK,
-        }
-    }
-
-    fn payload(&self) -> Vec<u8> {
-        //TODO avoid copying?
-        match self {
-            Message::Version {
-                version,
-                services,
-                timestamp,
-                addr_recv,
-            } => {
-                let mut result = Vec::new();
-                (&mut result).put_u32_le(version.into());
-                (&mut result).put_u64_le(services.bits());
-                (&mut result).put_i64_le(timestamp.ser());
-                (&mut result).put_u64_le(addr_recv.services.bits());
-                match addr_recv.addr {
-                    IpAddr::V4(addr) => {
-                        (&mut result).put_bytes(0, 12);
-                        (&mut result).put_slice(&addr.octets());
-                    }
-                    IpAddr::V6(addr) => {
-                        (&mut result).put_slice(&addr.octets());
-                    }
-                }
-                (&mut result).put_u16(addr_recv.port);
-
-                (&mut result).put_bytes(0, 26); // addr_from - safe to ignore, most implementations send dummy data
-                (&mut result).put_bytes(0, 8); // nonce - not part of the minimum set of fields, treated as out-of-scope
-                (&mut result).put_u8(0); // user agent - setting to 'empty'
-                (&mut result).put_u32_le(0); // last block received - treated as out-of-scope
-
-                result
-            }
-            Message::VerAck => vec![],
-        }
-    }
 }
 
-fn do_parse_version(payload: &[u8]) -> Option<Message> {
+fn do_parse_version(payload: &[u8]) -> Option<BitcoinMessage> {
     let mut cursor = Cursor::new(payload);
 
     let version = BitcoinVersion(cursor.get_u32_le());
@@ -163,7 +166,7 @@ fn do_parse_version(payload: &[u8]) -> Option<Message> {
     let timestamp = Timestamp::de_ser(cursor.get_i64_le());
     let addr_recv = parse_network_address_without_timestamp(&mut cursor);
 
-    Some(Message::Version {
+    Some(BitcoinMessage::Version {
         version,
         services,
         timestamp,
@@ -196,8 +199,8 @@ fn parse_network_address_without_timestamp(
     }
 }
 
-fn do_parse_ver_ack(_payload: &[u8]) -> Option<Message> {
-    Some(Message::VerAck)
+fn do_parse_ver_ack(_payload: &[u8]) -> Option<BitcoinMessage> {
+    Some(BitcoinMessage::VerAck)
 }
 
 fn hash_for_payload(payload: &[u8]) -> u32 {
@@ -214,6 +217,7 @@ mod test {
 
     use bytes::BufMut;
     use rstest::*;
+    use crate::generic::protocol::GenericP2PConfig;
 
     use super::*;
 
@@ -239,8 +243,8 @@ mod test {
         );
     }
 
-    fn do_test_ser_version(addr: IpAddr, addr_bytes: [u8; 16], config: &Config) {
-        let msg = Message::Version {
+    fn do_test_ser_version(addr: IpAddr, addr_bytes: [u8; 16], config: &BitcoinConfig) {
+        let msg = BitcoinMessage::Version {
             version: BitcoinVersion(60002),
             services: Services::NODE_XTHIN,
             timestamp: Timestamp::de_ser(1234567),
@@ -274,7 +278,7 @@ mod test {
     #[test]
     fn test_ser_verack() {
         let mut buf = BytesMut::new();
-        Message::VerAck.ser(&mut buf, &test_config());
+        BitcoinMessage::VerAck.ser(&mut buf, &test_config());
         assert_eq!(
             buf.chunk(),
             message_data(None, COMMAND_VERACK, None, &vec![])
@@ -289,33 +293,31 @@ mod test {
     #[case::not_too_long       (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x00,0x10,0,0, 0,0,0,0], false)]
     fn test_message_has_complete_message(#[case] buf: Vec<u8>, #[case] expected: bool) {
         assert_eq!(
-            Message::has_complete_message(&buf, &test_config()).unwrap(),
+            BitcoinMessage::has_complete_message(&buf, &test_config()).unwrap(),
             expected
         );
     }
 
-    fn test_config() -> Config {
-        Config {
-            my_address: SocketAddr::from_str("127.0.0.1:12345").unwrap(),
+    fn test_config() -> BitcoinConfig {
+        BitcoinConfig {
+            generic_config: GenericP2PConfig::new(SocketAddr::from_str("127.0.0.1:12345").unwrap()),
             my_version: BitcoinVersion(60002),
             my_bitcoin_network: BitcoinNetworkId::TestNetRegTest,
             my_services: Services::empty(),
-            payload_size_limit: Config::DEFAULT_PAYLOAD_SIZE_LIMIT,
-            read_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
-            write_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
+            payload_size_limit: BitcoinConfig::DEFAULT_PAYLOAD_SIZE_LIMIT,
         }
     }
 
     #[test]
     fn test_message_has_complete_message_too_big() {
-        let result = Message::has_complete_message(
+        let result = BitcoinMessage::has_complete_message(
             &vec![
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x10, 0, 0, 0, 0, 0, 0,
             ],
             &test_config(),
         );
         assert!(matches!(
-            Err::<bool, P2PError>(P2PError::MessageTooBig),
+            Err::<bool, BitcoinError>(BitcoinError::MessageTooBig),
             result
         ));
     }
@@ -333,7 +335,7 @@ mod test {
 
         assert_eq!(
             parse_message_data(None, b"version\0\0\0\0\0", None, &payload),
-            Some(Message::Version {
+            Some(BitcoinMessage::Version {
                 version: BitcoinVersion(0x0000EA62),
                 services: Services::NODE_NETWORK,
                 timestamp: Timestamp::de_ser(0x50D0B211),
@@ -352,7 +354,7 @@ mod test {
     fn test_parse_verack_message() {
         assert_eq!(
             parse_message_data(None, COMMAND_VERACK, None, &vec![]),
-            Some(Message::VerAck)
+            Some(BitcoinMessage::VerAck)
         );
     }
 
@@ -379,11 +381,11 @@ mod test {
         command: &[u8],
         hash: Option<u32>,
         payload: &[u8],
-    ) -> Option<Message> {
+    ) -> Option<BitcoinMessage> {
         let vec = message_data(magic, command, hash, payload);
         let mut buf = BytesMut::from(vec.deref());
         buf.put_slice(&vec![55, 66]);
-        let result = Message::parse(&mut buf, &test_config());
+        let result = BitcoinMessage::parse_message(&mut buf, &test_config());
         assert_eq!(buf.chunk(), vec![55, 66].deref());
         result
     }
@@ -458,8 +460,8 @@ mod test {
 
     #[test]
     fn test_do_parse_ver_ack() {
-        assert_eq!(do_parse_ver_ack(b""), Some(Message::VerAck));
-        assert_eq!(do_parse_ver_ack(b"abc"), Some(Message::VerAck));
+        assert_eq!(do_parse_ver_ack(b""), Some(BitcoinMessage::VerAck));
+        assert_eq!(do_parse_ver_ack(b"abc"), Some(BitcoinMessage::VerAck));
     }
 
     #[rstest]

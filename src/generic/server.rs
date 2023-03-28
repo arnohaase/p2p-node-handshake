@@ -5,9 +5,8 @@ use log::info;
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
-use crate::config::Config;
-use crate::connection::Connection;
-use crate::error::P2PResult;
+use crate::generic::connection::Connection;
+use crate::generic::protocol::{P2PConfig, P2PProtocol};
 
 /// This is a bare bones implementation of a server socket accepting socket connections and providing
 ///  [Connection] instances.
@@ -21,13 +20,14 @@ use crate::error::P2PResult;
 ///  aspects like limiting the number of connections, clean shutdown, exponential backoff or
 ///  verifying that the network address from listener.accept matches the one in P2P messages as
 ///  out-of-scope.
-pub async fn listen<F, Fut>(
+pub async fn listen<P, F, Fut>(
     on_connect: F,
     is_running: oneshot::Sender<()>,
-    config: Arc<Config>,
-) -> P2PResult<()>
+    config: Arc<P::Config>,
+) -> Result<(), P::Error>
 where
-    F: Fn(Connection) -> Fut,
+    P: P2PProtocol,
+    F: Fn(Connection<P>) -> Fut,
     Fut: Future<Output = ()> + Send + 'static,
 {
     let listener = Listener::new(on_connect, config).await?;
@@ -36,23 +36,23 @@ where
     Ok(())
 }
 
-struct Listener<F: Fn(Connection) -> Fut, Fut: Future<Output = ()> + Send + 'static> {
+struct Listener<F: Fn(Connection<P>) -> Fut, Fut: Future<Output = ()> + Send + 'static, P: P2PProtocol> {
     listener: TcpListener,
     on_connect: F,
-    config: Arc<Config>,
+    config: Arc<P::Config>,
 }
 
-impl<F: Fn(Connection) -> Fut, Fut: Future<Output = ()> + Send + 'static> Listener<F, Fut> {
-    async fn new(on_connect: F, config: Arc<Config>) -> P2PResult<Listener<F, Fut>> {
-        info!("listening for connections on {}", config.my_address);
+impl<F: Fn(Connection<P>) -> Fut, Fut: Future<Output = ()> + Send + 'static, P: P2PProtocol> Listener<F, Fut, P> {
+    async fn new(on_connect: F, config: Arc<P::Config>) -> Result<Listener<F, Fut, P>, P::Error> {
+        info!("listening for connections on {}", config.generic_config().my_address);
         Ok(Listener {
-            listener: TcpListener::bind(config.my_address).await?,
+            listener: TcpListener::bind(config.generic_config().my_address).await?,
             on_connect,
             config,
         })
     }
 
-    async fn do_listen(&self) -> P2PResult<()> {
+    async fn do_listen(&self) -> Result<(), P::Error> {
         loop {
             let (socket, peer_addr) = self.listener.accept().await?;
             let connection = Connection::new(socket, peer_addr, Arc::clone(&self.config));
@@ -61,8 +61,8 @@ impl<F: Fn(Connection) -> Fut, Fut: Future<Output = ()> + Send + 'static> Listen
     }
 }
 
-impl<F: Fn(Connection) -> Fut, Fut: Future<Output = ()> + Send + 'static> Drop
-    for Listener<F, Fut>
+impl<F: Fn(Connection<P>) -> Fut, Fut: Future<Output = ()> + Send + 'static, P: P2PProtocol> Drop
+    for Listener<F, Fut, P>
 {
     fn drop(&mut self) {
         info!("shutting down TCP listener")
