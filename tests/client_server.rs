@@ -32,7 +32,9 @@ async fn test_client_server() -> P2PResult<()>{
         my_version: BitcoinVersion(60000),
         my_bitcoin_network: BitcoinNetworkId::TestNetRegTest,
         my_services: Services::NODE_XTHIN,
-        payload_size_limit: 10000,
+        payload_size_limit: Config::DEFAULT_PAYLOAD_SIZE_LIMIT,
+        read_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
+        write_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
     });
 
     let (server_running_sender, server_running_receiver) = oneshot::channel();
@@ -44,7 +46,9 @@ async fn test_client_server() -> P2PResult<()>{
         my_version: BitcoinVersion(60001),
         my_bitcoin_network: BitcoinNetworkId::TestNetRegTest,
         my_services: Services::NODE_NETWORK,
-        payload_size_limit: 10000,
+        payload_size_limit: Config::DEFAULT_PAYLOAD_SIZE_LIMIT,
+        read_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
+        write_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
     });
     server_running_receiver.await.unwrap();
     let mut client = Connection::connect(server_config.my_address.clone(), client_config).await?;

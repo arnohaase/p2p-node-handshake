@@ -27,7 +27,9 @@ async fn test_with_bitcoind() -> P2PResult<()>{
         my_version: BitcoinVersion(60002),
         my_bitcoin_network: BitcoinNetworkId::TestNetRegTest,
         my_services: Services::empty(),
-        payload_size_limit: 10000,
+        payload_size_limit: Config::DEFAULT_PAYLOAD_SIZE_LIMIT,
+        read_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
+        write_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
     });
     let mut client = Connection::connect(SocketAddr::from_str("127.0.0.1:18445").unwrap(), client_config).await?;
     let _negotiated = handshake(&mut client).await?;

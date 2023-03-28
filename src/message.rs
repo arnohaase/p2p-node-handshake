@@ -116,10 +116,24 @@ impl NetworkAddressWithoutTimestamp {
     }
 }
 
-pub type Command = [u8;12];
+pub enum Command {
+    Version,
+    VerAck,
+}
+impl Command {
+    pub fn de(id: &[u8]) -> Option<Command> {
+        match id {
+            COMMAND_VERSION => Some(Self::Version),
+            COMMAND_VERACK => Some(Self::VerAck),
+            _ => None,
+        }
+    }
+}
 
-const COMMAND_VERSION: &Command = b"version\0\0\0\0\0";
-const COMMAND_VERACK: &Command = b"verack\0\0\0\0\0\0";
+pub type CommandId = [u8;12];
+
+const COMMAND_VERSION: &[u8] = b"version\0\0\0\0\0";
+const COMMAND_VERACK:  &[u8] = b"verack\0\0\0\0\0\0";
 
 const MESSAGE_HEADER_LEN_ON_NETWORK: usize = 4 + 12 + 4 + 4; // magic + command + length + checksum
 const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12;    // magic + command
@@ -150,13 +164,13 @@ impl Message {
 
     /// todo documentation: assumes that the buffer contains an entire message, panicking otherwise
     /// todo  always consumes a message, returning None if the message was not recognized
-    pub fn parse(buf: &mut BytesMut) -> Option<Message> {
+    pub fn parse(buf: &mut BytesMut, config: &Config) -> Option<Message> {
         let magic = buf.get_u32_le();
-        //TODO check magic number against (configured) own magic version
 
-        //TODO avoid cloning - Command enum?
-        let command: Command = (&buf[..size_of::<Command>()]).try_into().unwrap();
-        buf.advance(size_of::<Command>());
+        let command_id = &buf[..size_of::<CommandId>()];
+        let command = Command::de(command_id);
+
+        buf.advance(size_of::<CommandId>());
 
         let payload_len: usize = buf.get_u32_le().try_into().expect("<32 bit architecture not supported");
         let checksum = buf.get_u32_le();
@@ -169,12 +183,17 @@ impl Message {
         let result = if hash_for_payload(payload) != checksum {
             debug!("checksum mismatch in received message, skipping");
             None
+        } else if BitcoinNetworkId::de_ser(magic) != Some(config.my_bitcoin_network) {
+            // This check is deferred so the implementation can skip the payload and stay in sync - for
+            //  what it's worth, this is a serious error
+            warn!("message from different bitcoin network received (local {:08x}, remote {:08x}), skipping", config.my_bitcoin_network.ser(), magic);
+            None
         } else {
-            match &command {
-                COMMAND_VERSION => do_parse_version(payload),
-                COMMAND_VERACK => do_parse_ver_ack(payload),
-                cmd => {
-                    debug!("received unknown command {:?}, skipping", cmd);
+            match command {
+                Some(Command::Version) => do_parse_version(payload),
+                Some(Command::VerAck) => do_parse_ver_ack(payload),
+                _ => {
+                    debug!("received unknown command, skipping");
                     None
                 }
             }
@@ -192,7 +211,7 @@ impl Message {
         buf.put_slice(&payload);
     }
 
-    fn command_string(&self) -> &'static Command {
+    fn command_string(&self) -> &'static [u8] {
         match self {
             Message::Version { .. } => COMMAND_VERSION,
             Message::VerAck => COMMAND_VERACK,
@@ -331,14 +350,14 @@ mod test {
             expected_payload.push(0);
         }
 
-        assert_eq!(buf.chunk(), message_data(COMMAND_VERSION, None, &expected_payload));
+        assert_eq!(buf.chunk(), message_data(None, COMMAND_VERSION, None, &expected_payload));
     }
 
     #[test]
     fn test_ser_verack() {
         let mut buf = BytesMut::new();
         Message::VerAck.ser(&mut buf, &test_config());
-        assert_eq!(buf.chunk(), message_data(COMMAND_VERACK, None, &vec![]));
+        assert_eq!(buf.chunk(), message_data(None, COMMAND_VERACK, None, &vec![]));
     }
 
     #[rstest]
@@ -357,7 +376,9 @@ mod test {
             my_version: BitcoinVersion(60002),
             my_bitcoin_network: BitcoinNetworkId::TestNetRegTest,
             my_services: Services::empty(),
-            payload_size_limit: 0x10000,
+            payload_size_limit: Config::DEFAULT_PAYLOAD_SIZE_LIMIT,
+            read_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
+            write_buffer_capacity: Config::DEFAULT_BUFFER_CAPACITY,
         }
     }
 
@@ -380,7 +401,7 @@ mod test {
             0x0F, 0x2F, 0x53, 0x61, 0x74, 0x6F, 0x73, 0x68, 0x69, 0x3A, 0x30, 0x2E, 0x37, 0x2E, 0x32, 0x2F,
             0xC0, 0x3E, 0x03, 0x00];
 
-        assert_eq!(parse_message_data(b"version\0\0\0\0\0", None, &payload), Some(Message::Version {
+        assert_eq!(parse_message_data(None, b"version\0\0\0\0\0", None, &payload), Some(Message::Version {
             version: BitcoinVersion(0x0000EA62),
             services: Services::NODE_NETWORK,
             timestamp: Timestamp(0x50D0B211),
@@ -394,10 +415,11 @@ mod test {
 
     #[test]
     fn test_parse_verack_message() {
-        assert_eq!(parse_message_data(COMMAND_VERACK, None, &vec![]), Some(Message::VerAck));
+        assert_eq!(parse_message_data(None, COMMAND_VERACK, None, &vec![]), Some(Message::VerAck));
     }
 
-    fn message_data(command: &[u8], hash: Option<u32>, payload: &[u8]) -> Vec<u8> {
+    fn message_data(magic: Option<u32>, command: &[u8], hash: Option<u32>, payload: &[u8]) -> Vec<u8> {
+        let magic = magic.unwrap_or(test_config().my_bitcoin_network.ser());
         let hash = hash.unwrap_or_else(|| hash_for_payload(payload));
 
         let mut buf = BytesMut::new();
@@ -409,23 +431,28 @@ mod test {
         buf.to_vec()
     }
 
-    fn parse_message_data(command: &[u8], hash: Option<u32>, payload: &[u8]) -> Option<Message> {
-        let vec = message_data(command, hash, payload);
+    fn parse_message_data(magic: Option<u32>, command: &[u8], hash: Option<u32>, payload: &[u8]) -> Option<Message> {
+        let vec = message_data(magic, command, hash, payload);
         let mut buf = BytesMut::from(vec.deref());
         buf.put_slice(&vec![55, 66]);
-        let result = Message::parse(&mut buf);
+        let result = Message::parse(&mut buf, &test_config());
         assert_eq!(buf.chunk(), vec![55, 66].deref());
         result
     }
 
     #[test]
     fn test_parse_unknown_command() {
-        assert_eq!(parse_message_data(b"other\0\0\0\0\0\0\0", None, &vec![]), None);
+        assert_eq!(parse_message_data(None, b"other\0\0\0\0\0\0\0", None, &vec![]), None);
     }
 
     #[test]
     fn test_parse_wrong_hash() {
-        assert_eq!(parse_message_data(COMMAND_VERACK, Some(123), &vec![]), None);
+        assert_eq!(parse_message_data(None, COMMAND_VERACK, Some(123), &vec![]), None);
+    }
+
+    #[test]
+    fn test_parse_magic_mismatch() {
+        assert_eq!(parse_message_data(Some(123), COMMAND_VERACK, Some(123), &vec![]), None);
     }
 
     #[test]
