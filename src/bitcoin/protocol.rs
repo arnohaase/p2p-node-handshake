@@ -45,23 +45,30 @@ impl FourWayHandshakeProtocol for BitcoinProtocol {
         }
     }
 
-    fn ack_message(_connection: &Connection<Self>, _version_message: &Self::ReceivedVersionExtract) -> Self::Message {
+    fn ack_message(
+        _connection: &Connection<Self>,
+        _version_message: &Self::ReceivedVersionExtract,
+    ) -> Self::Message {
         BitcoinMessage::VerAck
     }
 
     fn categorize_incoming(message: &Self::Message) -> Option<HandshakeMessageExtract<Self>> {
         match message {
-            BitcoinMessage::Version { version, services, .. } => Some(
-                HandshakeMessageExtract::Version(BitcoinPeerMetaData {
-                    version: *version,
-                    services: *services,
-                })
-            ),
+            BitcoinMessage::Version {
+                version, services, ..
+            } => Some(HandshakeMessageExtract::Version(BitcoinPeerMetaData {
+                version: *version,
+                services: *services,
+            })),
             BitcoinMessage::VerAck => Some(HandshakeMessageExtract::Ack(())),
         }
     }
 
-    fn negotiation_result(_config: &BitcoinConfig, version_data: &BitcoinPeerMetaData, _ack_data: &()) -> BitcoinPeerMetaData {
+    fn negotiation_result(
+        _config: &BitcoinConfig,
+        version_data: &BitcoinPeerMetaData,
+        _ack_data: &(),
+    ) -> BitcoinPeerMetaData {
         version_data.clone()
     }
 }

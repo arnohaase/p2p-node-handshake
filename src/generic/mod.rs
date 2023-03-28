@@ -1,4 +1,3 @@
-
 /// Protocol independent connection implementation
 pub mod connection;
 /// Protocol independent implementation of a four-way handshake

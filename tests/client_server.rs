@@ -5,8 +5,8 @@ use std::sync::Arc;
 use lazy_static::lazy_static;
 use log::{info, LevelFilter};
 use simple_logger::SimpleLogger;
-use tokio::sync::Notify;
 use tokio::sync::oneshot;
+use tokio::sync::Notify;
 
 use p2p_node_handshake::bitcoin::config::BitcoinConfig;
 use p2p_node_handshake::bitcoin::error::BitcoinResult;
@@ -53,7 +53,11 @@ async fn test_client_server() -> BitcoinResult<()> {
         payload_size_limit: BitcoinConfig::DEFAULT_PAYLOAD_SIZE_LIMIT,
     });
     server_running_receiver.await.unwrap();
-    let mut client = Connection::<BitcoinProtocol>::connect(server_config.generic_config.my_address.clone(), client_config).await?;
+    let mut client = Connection::<BitcoinProtocol>::connect(
+        server_config.generic_config.my_address.clone(),
+        client_config,
+    )
+    .await?;
     let negotiated = four_way_handshake(&mut client).await?;
     info!("client handshake negotiated: {:#?}", negotiated);
 

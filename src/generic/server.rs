@@ -36,15 +36,24 @@ where
     Ok(())
 }
 
-struct Listener<F: Fn(Connection<P>) -> Fut, Fut: Future<Output = ()> + Send + 'static, P: P2PProtocol> {
+struct Listener<
+    F: Fn(Connection<P>) -> Fut,
+    Fut: Future<Output = ()> + Send + 'static,
+    P: P2PProtocol,
+> {
     listener: TcpListener,
     on_connect: F,
     config: Arc<P::Config>,
 }
 
-impl<F: Fn(Connection<P>) -> Fut, Fut: Future<Output = ()> + Send + 'static, P: P2PProtocol> Listener<F, Fut, P> {
+impl<F: Fn(Connection<P>) -> Fut, Fut: Future<Output = ()> + Send + 'static, P: P2PProtocol>
+    Listener<F, Fut, P>
+{
     async fn new(on_connect: F, config: Arc<P::Config>) -> Result<Listener<F, Fut, P>, P::Error> {
-        info!("listening for connections on {}", config.generic_config().my_address);
+        info!(
+            "listening for connections on {}",
+            config.generic_config().my_address
+        );
         Ok(Listener {
             listener: TcpListener::bind(config.generic_config().my_address).await?,
             on_connect,

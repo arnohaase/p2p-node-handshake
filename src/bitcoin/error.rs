@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::generic::protocol::P2PError;
+use thiserror::Error;
 
 /// Convenience return type for functions that can fail with a [BitcoinError]
 pub type BitcoinResult<T> = Result<T, BitcoinError>;
@@ -45,4 +45,3 @@ impl From<std::io::Error> for BitcoinError {
         BitcoinError::Io(value)
     }
 }
-

@@ -55,7 +55,6 @@ type CommandId = [u8; 12];
 const COMMAND_VERSION: &[u8] = b"version\0\0\0\0\0";
 const COMMAND_VERACK: &[u8] = b"verack\0\0\0\0\0\0";
 
-
 const MESSAGE_HEADER_LEN_ON_NETWORK: usize = 4 + 12 + 4 + 4; // magic + command + length + checksum
 const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12; // magic + command
 
@@ -247,9 +246,9 @@ mod test {
     use std::ops::Deref;
     use std::str::FromStr;
 
+    use crate::generic::protocol::GenericP2PConfig;
     use bytes::BufMut;
     use rstest::*;
-    use crate::generic::protocol::GenericP2PConfig;
 
     use super::*;
 

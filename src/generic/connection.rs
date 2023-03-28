@@ -29,9 +29,13 @@ pub struct Connection<P: P2PProtocol> {
     ///  the write buffer can grow in an unbounded way. This flag is a safeguard against that.
     is_broken: bool,
 }
-impl <P: P2PProtocol> Connection<P> {
+impl<P: P2PProtocol> Connection<P> {
     /// Convenience factory
-    pub fn new(socket: TcpStream, peer_address: SocketAddr, config: Arc<P::Config>) -> Connection<P> {
+    pub fn new(
+        socket: TcpStream,
+        peer_address: SocketAddr,
+        config: Arc<P::Config>,
+    ) -> Connection<P> {
         Connection {
             socket,
             read_buffer: BytesMut::with_capacity(config.generic_config().read_buffer_capacity),
@@ -56,7 +60,10 @@ impl <P: P2PProtocol> Connection<P> {
     }
 
     /// Connect to a peer at a known address
-    pub async fn connect(addr: SocketAddr, config: Arc<P::Config>) -> Result<Connection<P>, P::Error> {
+    pub async fn connect(
+        addr: SocketAddr,
+        config: Arc<P::Config>,
+    ) -> Result<Connection<P>, P::Error> {
         debug!("connecting to {}", addr);
         let socket = TcpStream::connect(addr).await?;
         Ok(Connection::new(socket, addr, config))
@@ -69,7 +76,8 @@ impl <P: P2PProtocol> Connection<P> {
     ///   use for sending or receiving messages.
     pub async fn receive(&mut self) -> Result<Option<P::Message>, P::Error> {
         if self.is_broken {
-            error!("This connection with {} is broken (see log for details). Trying to receive \
+            error!(
+                "This connection with {} is broken (see log for details). Trying to receive \
             messages on it is a bug, please fix your code to reconnect after an error.",
                 self.peer_address,
             );
@@ -100,9 +108,9 @@ impl <P: P2PProtocol> Connection<P> {
                     }
                 }
                 Err(e) => {
-                    warn!("received suspicions message from {} - marking the invalid: {}",
-                        self.peer_address,
-                        e,
+                    warn!(
+                        "received suspicions message from {} - marking the invalid: {}",
+                        self.peer_address, e,
                     );
                     return Err(e);
                 }
@@ -117,10 +125,17 @@ impl <P: P2PProtocol> Connection<P> {
         while P::Message::has_complete_message(self.read_buffer.as_ref(), self.config.as_ref())? {
             self.num_messages_received += 1;
             if let Some(message) = P::Message::de_ser(&mut self.read_buffer, self.config.as_ref()) {
-                trace!("receiving message from {}: {:?}", self.peer_address, message);
+                trace!(
+                    "receiving message from {}: {:?}",
+                    self.peer_address,
+                    message
+                );
                 return Ok(Some(message));
             } else {
-                trace!("receiving unknown message from {}, skipping", self.peer_address);
+                trace!(
+                    "receiving unknown message from {}, skipping",
+                    self.peer_address
+                );
             }
         }
         Ok(None)
@@ -133,9 +148,11 @@ impl <P: P2PProtocol> Connection<P> {
     pub async fn send(&mut self, message: &P::Message) -> Result<(), P::Error> {
         trace!("sending message to {}: {:?}", self.peer_address, message);
         if self.is_broken {
-            error!("This connection with {} is broken, see log for details. Trying to send messages \
+            error!(
+                "This connection with {} is broken, see log for details. Trying to send messages \
             over this connection is a bug, please fix your code to reconnect after an error.",
-                self.peer_address);
+                self.peer_address
+            );
             return Err(P::Error::connection_reset_by_peer());
         }
 
