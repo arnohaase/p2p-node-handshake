@@ -1,6 +1,6 @@
 # p2p-node-handshake
 This is my solution for the [Eiger coding challenge](https://github.com/eqlabs/recruitment-exercises/blob/master/node-handshake.md).
-It implements the initialization of a Bitcoin connection handshake.
+It implements the Bitcoin protocol's initial handshake.
 
 ## Approaching the code
 
