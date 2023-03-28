@@ -19,7 +19,7 @@ use crate::generic::protocol::{P2PConfig, P2PProtocol};
 /// This code does not try to be a robust, production quality server implementation, and it treats
 ///  aspects like limiting the number of connections, clean shutdown, exponential backoff or
 ///  verifying that the network address from listener.accept matches the one in P2P messages as
-///  out-of-scope.
+///  out-of-scope. As is blacklisting of nodes etc.
 pub async fn listen<P, F, Fut>(
     on_connect: F,
     is_running: oneshot::Sender<()>,

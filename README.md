@@ -2,7 +2,36 @@
 This is my solution for the [Eiger coding challenge](https://github.com/eqlabs/recruitment-exercises/blob/master/node-handshake.md).
 It implements the initialization of a Bitcoin connection handshake.
 
+## Advanced Rust features
+
+The task at hand did not offer obvious ways to use macros or advanced lifetimes - I am familiar with them but refrained
+from introducing them in artificial ways.
+
+## Separation into generic and Bitcoin specific code
+
+The separation of the code into `generic` and `bitcoin` is probably overkill relative to the requirements, but I got
+carried away, and it makes for clean separation of concerns. Plus it allows for showcasing Rust features :-)
+
 ## Verifying the handshake with bitcoind
+
+### tl;dr
+
+To verify the handshake against a 'real' Bitcoin node, download the Bitcoin reference implementation and start 
+`bitcoind` on the `regtest` chain:
+
+```shell
+.../bitcoin-22.0/bin/bitcoind -datadir=<path-of-your-choice>/bitcoin_data/ -chain=regtest -bind=127.0.0.1 -debug=net
+```
+
+Then run an integration test that is normally ignored in a different shell:
+
+```shell
+cargo test bitcoind -- --ignored --nocapture
+```
+
+Then look at both logs.
+
+### In detail
 
 Unit tests are good for ensuring robustness and finding regressions, but for a published API it is necessary to test
 against other implementations. For the Bitcoin protocol, I chose the `bitcond` reference implementation.

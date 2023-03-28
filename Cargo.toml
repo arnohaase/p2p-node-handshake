@@ -14,11 +14,11 @@ bytes = "1"
 log = "0"
 sha2 = "0"
 thiserror = "1"
-tokio = { version = "1", features = [ "full" ]}
+tokio = { version = "1", features = [ "io-util", "net", "sync", "rt"]}
 
 [dev-dependencies]
 ctor = "0"
 lazy_static = "1"
 rstest = "0"
 simple_logger = "4"
-tokio = { version = "1", features = ["test-util"] }
+tokio = { version = "1", features = ["full"] }
