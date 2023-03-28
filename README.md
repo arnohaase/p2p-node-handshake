@@ -25,6 +25,12 @@ from introducing them in ways that felt unnecessary.
 The separation of the code into `generic` and `bitcoin` is probably overkill relative to the requirements, but I got
 carried away, and it makes for clean separation of concerns. Plus it allows for showcasing Rust features :-)
 
+## Unit Tests
+
+Tokio does network I/O through traits, so the networking code (which is a lot of the code) is unit testable in 
+principle. But that was not explicitly called out as a priority, and it would have added to the 
+challenge's scope significantly. Plus it is tedious work, so I decided to make it out-of-scope.
+
 ## Verifying the handshake with bitcoind
 
 ### tl;dr
