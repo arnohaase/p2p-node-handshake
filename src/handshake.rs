@@ -5,9 +5,8 @@ use tokio::sync::Mutex;
 
 use crate::connection::Connection;
 use crate::error::P2PResult;
-use crate::message::{
-    BitcoinVersion, Message, NetworkAddressWithoutTimestamp, Services, Timestamp,
-};
+use crate::message::{Message, NetworkAddressWithoutTimestamp};
+use crate::types::*;
 
 #[derive(Debug)]
 pub struct NegotiatedVersion {

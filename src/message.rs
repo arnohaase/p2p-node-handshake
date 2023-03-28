@@ -1,100 +1,14 @@
 use std::io::Cursor;
 use std::mem::size_of;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::time::{SystemTime, UNIX_EPOCH};
 
-use bitflags::bitflags;
 use bytes::{Buf, BufMut, BytesMut};
 use log::{debug, warn};
 use sha2::{Digest, Sha256};
 
 use crate::config::Config;
 use crate::error::P2PError;
-
-#[derive(Eq, PartialEq, Clone, Copy, Debug)]
-pub enum BitcoinNetworkId {
-    Main,
-    TestNetRegTest,
-    TestNet3,
-    SigNet,
-    NameCoin,
-}
-impl BitcoinNetworkId {
-    const MAIN: u32 = 0xD9B4BEF9;
-    const TESTNET_REGTEST: u32 = 0xDAB5BFFA;
-    const TESTNET3: u32 = 0x0709110B;
-    const SIGNET: u32 = 0x40CF030A;
-    const NAMECOIN: u32 = 0xFEB4BEF9;
-
-    fn ser(&self) -> u32 {
-        match self {
-            BitcoinNetworkId::Main => Self::MAIN,
-            BitcoinNetworkId::TestNetRegTest => Self::TESTNET_REGTEST,
-            BitcoinNetworkId::TestNet3 => Self::TESTNET3,
-            BitcoinNetworkId::SigNet => Self::SIGNET,
-            BitcoinNetworkId::NameCoin => Self::NAMECOIN,
-        }
-    }
-
-    fn de_ser(raw: u32) -> Option<Self> {
-        match raw {
-            Self::MAIN => Some(Self::Main),
-            Self::TESTNET_REGTEST => Some(Self::TestNetRegTest),
-            Self::TESTNET3 => Some(Self::TestNet3),
-            Self::SIGNET => Some(Self::SigNet),
-            Self::NAMECOIN => Some(Self::NameCoin),
-            _ => None,
-        }
-    }
-}
-
-bitflags! {
-    #[derive(Eq, PartialEq, Debug, Clone, Copy)]
-    pub struct Services: u64 {
-        const NODE_NETWORK = 1;
-        const NODE_GETUTXO = 2;
-        const NODE_BLOOM = 4;
-        const NODE_WITNESS = 8;
-        const NODE_XTHIN = 16;
-        const NODE_COMPACT_FILTERS = 64;
-        const NODE_NETWORK_LIMITED = 1024;
-    }
-}
-
-#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Debug)]
-pub struct BitcoinVersion(pub u32);
-
-impl From<BitcoinVersion> for u32 {
-    fn from(value: BitcoinVersion) -> Self {
-        value.0
-    }
-}
-impl From<&BitcoinVersion> for u32 {
-    fn from(value: &BitcoinVersion) -> Self {
-        value.0
-    }
-}
-
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
-pub struct Timestamp(i64);
-impl Timestamp {
-    pub fn now() -> Timestamp {
-        let seconds = match SystemTime::now().duration_since(UNIX_EPOCH) {
-            Ok(d) => match d.as_secs().try_into() {
-                Ok(s) => s,
-                Err(_) => {
-                    warn!("system clock indicates time before Unix epoch, defaulting to Unix epoch exactly");
-                    0
-                }
-            },
-            Err(e) => {
-                warn!("system time error - system clock before Unix epoch? Defaulting to Unix epoch exactly: {:?}", e);
-                0
-            }
-        };
-        Timestamp(seconds)
-    }
-}
+use crate::types::*;
 
 /// Network address without timestamp - Bitcoin spec specifies a 'timestamp' as part of a network
 ///  address, everywhere except for Version messages
@@ -113,25 +27,6 @@ impl NetworkAddressWithoutTimestamp {
         }
     }
 }
-
-pub enum Command {
-    Version,
-    VerAck,
-}
-impl Command {
-    pub fn de(id: &[u8]) -> Option<Command> {
-        match id {
-            COMMAND_VERSION => Some(Self::Version),
-            COMMAND_VERACK => Some(Self::VerAck),
-            _ => None,
-        }
-    }
-}
-
-pub type CommandId = [u8; 12];
-
-const COMMAND_VERSION: &[u8] = b"version\0\0\0\0\0";
-const COMMAND_VERACK: &[u8] = b"verack\0\0\0\0\0\0";
 
 const MESSAGE_HEADER_LEN_ON_NETWORK: usize = 4 + 12 + 4 + 4; // magic + command + length + checksum
 const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12; // magic + command
@@ -235,7 +130,7 @@ impl Message {
                 let mut result = Vec::new();
                 (&mut result).put_u32_le(version.into());
                 (&mut result).put_u64_le(services.bits());
-                (&mut result).put_i64_le(timestamp.0);
+                (&mut result).put_i64_le(timestamp.ser());
                 (&mut result).put_u64_le(addr_recv.services.bits());
                 match addr_recv.addr {
                     IpAddr::V4(addr) => {
@@ -265,7 +160,7 @@ fn do_parse_version(payload: &[u8]) -> Option<Message> {
 
     let version = BitcoinVersion(cursor.get_u32_le());
     let services = Services::from_bits_truncate(cursor.get_u64_le());
-    let timestamp = Timestamp(cursor.get_i64_le());
+    let timestamp = Timestamp::de_ser(cursor.get_i64_le());
     let addr_recv = parse_network_address_without_timestamp(&mut cursor);
 
     Some(Message::Version {
@@ -348,7 +243,7 @@ mod test {
         let msg = Message::Version {
             version: BitcoinVersion(60002),
             services: Services::NODE_XTHIN,
-            timestamp: Timestamp(1234567),
+            timestamp: Timestamp::de_ser(1234567),
             addr_recv: NetworkAddressWithoutTimestamp {
                 services: Services::NODE_XTHIN,
                 addr,
@@ -441,7 +336,7 @@ mod test {
             Some(Message::Version {
                 version: BitcoinVersion(0x0000EA62),
                 services: Services::NODE_NETWORK,
-                timestamp: Timestamp(0x50D0B211),
+                timestamp: Timestamp::de_ser(0x50D0B211),
                 addr_recv: NetworkAddressWithoutTimestamp {
                     services: Services::NODE_NETWORK,
                     addr: IpAddr::V6(Ipv6Addr::from([

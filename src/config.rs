@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use crate::message::{BitcoinNetworkId, BitcoinVersion, Services};
+use crate::types::{BitcoinNetworkId, BitcoinVersion, Services};
 
 pub struct Config {
     pub my_address: SocketAddr,
