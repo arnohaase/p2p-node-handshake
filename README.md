@@ -23,7 +23,7 @@ To verify the handshake against a 'real' Bitcoin node, download the Bitcoin refe
 .../bitcoin-22.0/bin/bitcoind -datadir=<path-of-your-choice>/bitcoin_data/ -chain=regtest -bind=127.0.0.1 -debug=net
 ```
 
-Then run an integration test that is normally ignored in a different shell:
+Then run an integration test (that is set to `#[ignore]`) in a different shell:
 
 ```shell
 cargo test bitcoind -- --ignored --nocapture
