@@ -18,7 +18,6 @@ pub struct Connection {
     pub config: Arc<Config>, //TODO documentation this is passed around because it is fixed
 }
 impl Connection {
-    //TODO test
     pub fn new(socket: TcpStream, peer_address: SocketAddr, config: Arc<Config>) -> Connection {
         Connection {
             socket,

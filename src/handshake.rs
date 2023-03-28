@@ -9,15 +9,14 @@ use crate::message::{Message, NetworkAddressWithoutTimestamp};
 use crate::types::*;
 
 #[derive(Debug)]
-pub struct NegotiatedVersion {
-    //TODO better name?
+pub struct PeerMetaData {
     pub peer_version: BitcoinVersion,
     pub peer_services: Services,
 }
 
 //TODO documentation - None means connection was closed
 //TODO documentation - timeout via decorator
-pub async fn handshake(connection: &mut Connection) -> P2PResult<Option<NegotiatedVersion>> {
+pub async fn handshake(connection: &mut Connection) -> P2PResult<Option<PeerMetaData>> {
     connection
         .send(&Message::Version {
             version: connection.config.my_version,
@@ -53,7 +52,7 @@ pub async fn handshake(connection: &mut Connection) -> P2PResult<Option<Negotiat
         if verack_received.load(Ordering::Acquire) {
             let lock = peer_info.lock().await;
             if let Some((version, services)) = lock.as_ref() {
-                let result = NegotiatedVersion {
+                let result = PeerMetaData {
                     peer_version: *version,
                     peer_services: *services,
                 };
