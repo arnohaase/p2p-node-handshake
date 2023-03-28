@@ -10,6 +10,43 @@ use sha2::{Digest, Sha256};
 
 use crate::error::P2PError;
 
+#[derive(Eq, PartialEq, Clone, Copy, Debug)]
+pub enum BitcoinNetwork {
+    Main,
+    TestNetRegTest,
+    TestNet3,
+    SigNet,
+    NameCoin,
+}
+impl BitcoinNetwork {
+    const MAIN: u32 = 0xD9B4BEF9;
+    const TESTNET_REGTEST: u32 = 0xDAB5BFFA;
+    const TESTNET3: u32 = 0x0709110B;
+    const SIGNET: u32 =0x40CF030A;
+    const NAMECOIN: u32 = 0xFEB4BEF9;
+
+    fn ser(&self) -> u32 {
+        match self {
+            BitcoinNetwork::Main => Self::MAIN,
+            BitcoinNetwork::TestNetRegTest => Self::TESTNET_REGTEST,
+            BitcoinNetwork::TestNet3 => Self::TESTNET3,
+            BitcoinNetwork::SigNet => Self::SIGNET,
+            BitcoinNetwork::NameCoin => Self::NAMECOIN,
+        }
+    }
+
+    fn de_ser(raw: u32) -> Option<Self> {
+        match raw {
+            Self::MAIN => Some(Self::Main),
+            Self::TESTNET_REGTEST => Some(Self::TestNetRegTest),
+            Self::TESTNET3 => Some(Self::TestNet3),
+            Self::SIGNET => Some(Self::SigNet),
+            Self::NAMECOIN => Some(Self::NameCoin),
+            _ => None,
+        }
+    }
+}
+
 bitflags! {
     #[derive(Eq, PartialEq, Debug, Clone, Copy)]
     pub struct Services: u64 {
@@ -82,7 +119,7 @@ impl Message {
         if buf.len() < MESSAGE_HEADER_LEN_ON_NETWORK {
             return Ok(false);
         }
-        let payload_len: usize = (&buf[MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH..]).get_u32_le().try_into().expect("<32 bit system not supported");
+        let payload_len: usize = (&buf[MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH..]).get_u32_le().try_into().expect("<32 bit architecture not supported");
         if payload_len > PAYLOAD_SIZE_THRESHOLD {
             return Err(P2PError::MessageTooBig);
         }
@@ -99,7 +136,7 @@ impl Message {
         let command: Command = (&buf[..size_of::<Command>()]).try_into().unwrap();
         buf.advance(size_of::<Command>());
 
-        let payload_len: usize = buf.get_u32_le().try_into().expect("<32 bit system not supported");
+        let payload_len: usize = buf.get_u32_le().try_into().expect("<32 bit architecture not supported");
         let checksum = buf.get_u32_le();
 
         // implementation: decouple buffer advancement from payload handling - we want to advance
@@ -287,14 +324,19 @@ mod test {
     }
 
     #[rstest]
-    #[case::empty(vec![], Ok(false))]
-    #[case::empty              (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0, 0,0,0,0], Ok(true))]
-    #[case::incomplete_payload (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 1,0,0,0, 0,0,0,0], Ok(false))]
-    #[case::complete_payload (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 1,0,0,0, 0,0,0,0, 65], Ok(true))]
-    #[case::too_long           (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x01,0x10,0,0, 0,0,0,0], Err(P2PError::MessageTooBig))]
-    #[case::not_too_long       (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x00,0x10,0,0, 0,0,0,0], Ok(false))]
-    fn test_message_has_complete_message(#[case] buf: Vec<u8>, #[case] expected: Result<bool, P2PError>) {
-        assert_eq!(Message::has_complete_message(&buf), expected);
+    #[case::empty              (vec![], false)]
+    #[case::empty              (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0,0,0,0, 0,0,0,0], true)]
+    #[case::incomplete_payload (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 1,0,0,0, 0,0,0,0], false)]
+    #[case::complete_payload   (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 1,0,0,0, 0,0,0,0, 65], true)]
+    #[case::not_too_long       (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x00,0x10,0,0, 0,0,0,0], false)]
+    fn test_message_has_complete_message(#[case] buf: Vec<u8>, #[case] expected: bool) {
+        assert_eq!(Message::has_complete_message(&buf).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_message_has_complete_message_too_big() {
+        let result = Message::has_complete_message(&vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x01,0x10,0,0, 0,0,0,0]);
+        assert!(matches!(Err::<bool, P2PError>(P2PError::MessageTooBig), result));
     }
 
     #[test]
@@ -339,7 +381,7 @@ mod test {
     }
 
     fn parse_message_data(command: &[u8], hash: Option<u32>, payload: &[u8]) -> Option<Message> {
-        let mut vec = message_data(command, hash, payload);
+        let vec = message_data(command, hash, payload);
         let mut buf = BytesMut::from(vec.deref());
         buf.put_slice(&vec![55, 66]);
         let result = Message::parse(&mut buf);
