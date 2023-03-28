@@ -24,7 +24,7 @@ impl Connection { //TODO test
         Ok(Connection::new(socket))
     }
 
-    pub async fn read_message(&mut self) -> P2PResult<Option<Message>> {
+    pub async fn receive(&mut self) -> P2PResult<Option<Message>> {
         //TODO mark connection as broken on I/O error
 
         loop {
@@ -53,7 +53,7 @@ impl Connection { //TODO test
         Ok(None)
     }
 
-    pub async fn write_message(&mut self, message: &Message) -> P2PResult<()> {
+    pub async fn send(&mut self, message: &Message) -> P2PResult<()> {
         message.ser(&mut self.write_buffer);
         self.socket.write_all_buf(&mut self.write_buffer).await?;
         //TODO mark connection as broken on I/O error
