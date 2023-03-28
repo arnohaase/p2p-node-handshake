@@ -134,8 +134,6 @@ impl P2PMessage<BitcoinProtocol> for BitcoinMessage {
         Ok(buf.len() >= MESSAGE_HEADER_LEN_ON_NETWORK + payload_len)
     }
 
-    /// todo documentation: assumes that the buffer contains an entire message, panicking otherwise
-    /// todo  always consumes a message, returning None if the message was not recognized
     fn de_ser(buf: &mut BytesMut, config: &BitcoinConfig) -> Option<Self> {
         let magic = buf.get_u32_le();
 

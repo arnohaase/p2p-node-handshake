@@ -21,7 +21,7 @@ pub struct Connection<P: P2PProtocol> {
     /// for debug / logging purposes, and also available to protocol code where the target node's
     ///  is part of a message
     peer_address: SocketAddr,
-    config: Arc<P::Config>, //TODO documentation this is passed around because it is fixed
+    config: Arc<P::Config>,
     num_messages_sent: u64,
     num_messages_received: u64,
     pd: PhantomData<P>,
