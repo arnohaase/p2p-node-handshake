@@ -1,13 +1,11 @@
 use std::marker::PhantomData;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use bytes::BytesMut;
-use log::{debug, error, warn};
+use log::{debug, error, trace};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::time::sleep;
 
 use crate::generic::protocol::{P2PConfig, P2PError, P2PMessage, P2PProtocol};
 
@@ -73,7 +71,10 @@ impl <P: P2PProtocol> Connection<P> {
         while P::Message::has_complete_message(self.read_buffer.as_ref(), self.config.as_ref())? {
             self.num_received += 1;
             if let Some(message) = P::Message::parse_message(&mut self.read_buffer, self.config.as_ref()) {
+                trace!("receiving message from {}: {:?}", self.peer_address, message);
                 return Ok(Some(message));
+            } else {
+                trace!("receiving unknown message from {}, skipping", self.peer_address);
             }
         }
         Ok(None)
@@ -81,6 +82,7 @@ impl <P: P2PProtocol> Connection<P> {
 
     ///TODO an error may leave the connection in an inconsistent state - caller should clean up
     pub async fn send(&mut self, message: &P::Message) -> Result<(), P::Error> {
+        trace!("sending message to {}: {:?}", self.peer_address, message);
         if self.is_broken {
             error!("A previoius network error sending data to {} left the connection in a \
             potentially inconsistent state. Trying to send messages over this connection is\

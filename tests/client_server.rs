@@ -1,14 +1,12 @@
 use std::net::SocketAddr;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 
 use lazy_static::lazy_static;
 use log::{info, LevelFilter};
 use simple_logger::SimpleLogger;
 use tokio::sync::Notify;
 use tokio::sync::oneshot;
-use tokio::time::sleep;
 
 use p2p_node_handshake::bitcoin::config::BitcoinConfig;
 use p2p_node_handshake::bitcoin::error::BitcoinResult;
