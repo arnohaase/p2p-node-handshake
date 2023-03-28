@@ -56,7 +56,7 @@ To prepare the test against bitcoind, perform the following steps (details are d
 other OSs):
 * Download the latest version of the Bitcoin reference implementation from
    https://bitcoin.org/bin/bitcoin-core-22.0/bitcoin-22.0-x86_64-linux-gnu.tar.gz and extract to a folder of your
-   choice.
+   choice (or build the sources, if you prefer).
 * Create a folder for it to store its data: `mkdir -p <path-of-your-choice>/bitcoind-data`
 * Run `bitcoind` in a shell, substituting the paths where bitcoind was extracted and the folder for bitcoin data. Details
    are important for the integration test to run:
