@@ -1,5 +1,6 @@
 #![warn(missing_docs, rust_2018_idioms)]
 
+pub mod config;
 pub mod connection;
 pub mod error;
 pub mod handshake;

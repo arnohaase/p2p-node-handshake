@@ -1,6 +1,6 @@
 use std::io::Cursor;
 use std::mem::size_of;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use bitflags::bitflags;
@@ -8,6 +8,7 @@ use bytes::{Buf, BufMut, BytesMut};
 use log::{debug, warn};
 use sha2::{Digest, Sha256};
 
+use crate::config::Config;
 use crate::error::P2PError;
 
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
@@ -60,6 +61,20 @@ bitflags! {
     }
 }
 
+#[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Debug)]
+pub struct Version(u32);
+
+impl From<Version> for u32 {
+    fn from(value: Version) -> Self {
+        value.0
+    }
+}
+impl From<&Version> for u32 {
+    fn from(value: &Version) -> Self {
+        value.0
+    }
+}
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Timestamp(i64);
 impl Timestamp {
@@ -91,6 +106,15 @@ pub struct NetworkAddressWithoutTimestamp {
     pub addr: IpAddr,
     pub port: u16,
 }
+impl NetworkAddressWithoutTimestamp {
+    pub fn new(peer_addr: &SocketAddr, config: &Config) -> NetworkAddressWithoutTimestamp {
+        NetworkAddressWithoutTimestamp {
+            services: config.my_services,
+            addr: peer_addr.ip(),
+            port: peer_addr.port(),
+        }
+    }
+}
 
 pub type Command = [u8;12];
 
@@ -100,13 +124,11 @@ const COMMAND_VERACK: &Command = b"verack\0\0\0\0\0\0";
 const MESSAGE_HEADER_LEN_ON_NETWORK: usize = 4 + 12 + 4 + 4; // magic + command + length + checksum
 const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12;    // magic + command
 
-const PAYLOAD_SIZE_THRESHOLD: usize = 0x1000; //TODO make this configurable
-
 
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum Message {
     Version {
-        version: u32,
+        version: Version,
         services: Services,
         timestamp: Timestamp,
         addr_recv: NetworkAddressWithoutTimestamp,
@@ -115,12 +137,12 @@ pub enum Message {
 }
 impl Message {
     //TODO documentation
-    pub fn has_complete_message(buf: &[u8]) -> Result<bool, P2PError> {
+    pub fn has_complete_message(buf: &[u8], config: &Config) -> Result<bool, P2PError> {
         if buf.len() < MESSAGE_HEADER_LEN_ON_NETWORK {
             return Ok(false);
         }
         let payload_len: usize = (&buf[MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH..]).get_u32_le().try_into().expect("<32 bit architecture not supported");
-        if payload_len > PAYLOAD_SIZE_THRESHOLD {
+        if payload_len > config.payload_size_limit {
             return Err(P2PError::MessageTooBig);
         }
         Ok(buf.len() >= MESSAGE_HEADER_LEN_ON_NETWORK + payload_len)
@@ -132,7 +154,7 @@ impl Message {
         let magic = buf.get_u32_le();
         //TODO check magic number against (configured) own magic version
 
-        //TODO avoid cloning - MessageKind enum?
+        //TODO avoid cloning - Command enum?
         let command: Command = (&buf[..size_of::<Command>()]).try_into().unwrap();
         buf.advance(size_of::<Command>());
 
@@ -181,7 +203,7 @@ impl Message {
         match self {
             Message::Version { version, services, timestamp, addr_recv } => {
                 let mut result = Vec::new();
-                (&mut result).put_u32_le(*version);
+                (&mut result).put_u32_le(version.into());
                 (&mut result).put_u64_le(services.bits());
                 (&mut result).put_i64_le(timestamp.0);
                 (&mut result).put_u64_le(addr_recv.services.bits());
@@ -211,7 +233,7 @@ impl Message {
 fn do_parse_version(payload: &[u8]) -> Option<Message> {
     let mut cursor = Cursor::new(payload);
 
-    let version = cursor.get_u32_le();
+    let version = Version(cursor.get_u32_le());
     let services = Services::from_bits_truncate(cursor.get_u64_le());
     let timestamp = Timestamp(cursor.get_i64_le());
     let addr_recv = parse_network_address_without_timestamp(&mut cursor);
@@ -267,6 +289,8 @@ fn hash_for_payload(payload: &[u8]) -> u32 {
 #[cfg(test)]
 mod test {
     use std::ops::Deref;
+    use std::str::FromStr;
+
     use bytes::BufMut;
     use rstest::*;
 
@@ -289,7 +313,7 @@ mod test {
 
     fn do_test_ser_version(addr: IpAddr, addr_bytes: [u8;16]) {
         let msg = Message::Version {
-            version: 60002,
+            version: Version(60002),
             services: Services::NODE_XTHIN,
             timestamp: Timestamp(1234567),
             addr_recv: NetworkAddressWithoutTimestamp {
@@ -330,15 +354,25 @@ mod test {
     #[case::complete_payload   (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 1,0,0,0, 0,0,0,0, 65], true)]
     #[case::not_too_long       (vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x00,0x10,0,0, 0,0,0,0], false)]
     fn test_message_has_complete_message(#[case] buf: Vec<u8>, #[case] expected: bool) {
-        assert_eq!(Message::has_complete_message(&buf).unwrap(), expected);
+        assert_eq!(Message::has_complete_message(&buf, &test_config()).unwrap(), expected);
+    }
+
+    fn test_config() -> Config {
+        Config {
+            my_address: SocketAddr::from_str("127.0.0.1:12345").unwrap(),
+            my_version: Version(60002),
+            my_services: Services::empty(),
+            payload_size_limit: 0x10000,
+        }
     }
 
     #[test]
     fn test_message_has_complete_message_too_big() {
-        let result = Message::has_complete_message(&vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x01,0x10,0,0, 0,0,0,0]);
+        let result = Message::has_complete_message(&vec![0,0,0,0, 0,0,0,0,0,0,0,0,0,0,0,0, 0x01,0x10,0,0, 0,0,0,0], &test_config());
         assert!(matches!(Err::<bool, P2PError>(P2PError::MessageTooBig), result));
     }
 
+    /// This is test data from the Bitcoin protocol documentation
     #[test]
     fn test_parse_version_message() {
         let payload = vec![
@@ -352,7 +386,7 @@ mod test {
             0xC0, 0x3E, 0x03, 0x00];
 
         assert_eq!(parse_message_data(b"version\0\0\0\0\0", None, &payload), Some(Message::Version {
-            version: 0x0000EA62,
+            version: Version(0x0000EA62),
             services: Services::NODE_NETWORK,
             timestamp: Timestamp(0x50D0B211),
             addr_recv: NetworkAddressWithoutTimestamp {
@@ -438,6 +472,7 @@ mod test {
 
     #[rstest]
     #[case::empty(b"", 0xE2E0F65D)]
+    // This is sample data comes from the Bitcoin protocol documentation
     #[case::version(&vec![
         0x62, 0xEA, 0, 0,
         1, 0, 0, 0, 0, 0, 0, 0,

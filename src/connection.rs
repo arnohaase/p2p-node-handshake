@@ -1,27 +1,35 @@
+use std::net::SocketAddr;
+use std::sync::Arc;
+
 use bytes::BytesMut;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpStream, ToSocketAddrs};
-use crate::error::{P2PError, P2PResult};
+use tokio::net::TcpStream;
+use crate::config::Config;
 
+use crate::error::{P2PError, P2PResult};
 use crate::message::Message;
 
 pub struct Connection {
     socket: TcpStream,
     read_buffer: BytesMut,
     write_buffer: BytesMut,
+    pub peer_address: SocketAddr,
+    pub config: Arc<Config>, //TODO documentation this is passed around because it is fixed
 }
 impl Connection { //TODO test
-    pub fn new(socket: TcpStream) -> Connection {
+    pub fn new(socket: TcpStream, peer_address: SocketAddr, config: Arc<Config>) -> Connection {
         Connection {
             socket: socket,
             read_buffer: BytesMut::with_capacity(0x10000), //TODO configurable
             write_buffer: BytesMut::new(),
+            peer_address,
+            config,
         }
     }
 
-    pub async fn connect(addr: impl ToSocketAddrs) -> P2PResult<Connection> {
+    pub async fn connect(addr: SocketAddr, config: Arc<Config>) -> P2PResult<Connection> {
         let socket = TcpStream::connect(addr).await?;
-        Ok(Connection::new(socket))
+        Ok(Connection::new(socket, addr, config))
     }
 
     pub async fn receive(&mut self) -> P2PResult<Option<Message>> {
@@ -45,7 +53,7 @@ impl Connection { //TODO test
     }
 
     fn parse_message(&mut self) -> P2PResult<Option<Message>> {
-        while Message::has_complete_message(self.read_buffer.as_ref())? {
+        while Message::has_complete_message(self.read_buffer.as_ref(), self.config.as_ref())? {
             if let Some(message) = Message::parse(&mut self.read_buffer) {
                 return Ok(Some(message));
             }

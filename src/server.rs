@@ -1,7 +1,10 @@
 use std::future::Future;
-use log::info;
-use tokio::net::{TcpListener, ToSocketAddrs};
+use std::sync::Arc;
 
+use log::info;
+use tokio::net::TcpListener;
+
+use crate::config::Config;
 use crate::connection::Connection;
 use crate::error::P2PResult;
 
@@ -15,12 +18,12 @@ use crate::error::P2PResult;
 ///  aspects like limiting the number of connections, clean shutdown, exponential backoff or
 ///  verifying that the network address from listener.accept matches the one in P2P messages as
 ///  out-of-scope.
-pub async fn listen<F, Fut>(addr: impl ToSocketAddrs, on_connect: F, shutdown: impl Future) -> P2PResult<()>
+pub async fn listen<F, Fut>(on_connect: F, shutdown: impl Future, config: Arc<Config>) -> P2PResult<()>
 where
     F: Fn(Connection) -> Fut,
     Fut: Future<Output = ()> + Send + 'static,
 {
-    let listener = Listener::new(addr, on_connect).await?;
+    let listener = Listener::new(on_connect, config).await?;
     tokio::select! {
         _ = listener.do_listen() => { },
         _ = shutdown => { }
@@ -33,25 +36,27 @@ struct Listener<
     Fut: Future<Output=()> + Send + 'static,
 >  {
     listener: TcpListener,
-    on_connect: F
+    on_connect: F,
+    config: Arc<Config>,
 }
 
 impl<
     F: Fn(Connection) -> Fut,
     Fut: Future<Output=()> + Send + 'static,
 > Listener<F, Fut> {
-    async fn new(addr: impl ToSocketAddrs, on_connect: F) -> P2PResult<Listener<F, Fut>> {
-        info!("listening for connections");
+    async fn new(on_connect: F, config: Arc<Config>) -> P2PResult<Listener<F, Fut>> {
+        info!("listening for connections on {}", config.my_address);
         Ok(Listener {
-            listener: TcpListener::bind(addr).await?,
+            listener: TcpListener::bind(config.my_address).await?,
             on_connect,
+            config
         })
     }
 
     async fn do_listen(&self) -> P2PResult<()> {
         loop {
-            let (socket,_) = self.listener.accept().await?;
-            let connection = Connection::new(socket);
+            let (socket, peer_addr) = self.listener.accept().await?;
+            let connection = Connection::new(socket, peer_addr, Arc::clone(&self.config));
             tokio::spawn((self.on_connect)(connection));
         }
     }

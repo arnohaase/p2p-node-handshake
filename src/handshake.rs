@@ -1,12 +1,11 @@
-use std::net::{IpAddr, Ipv4Addr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::Mutex;
 use crate::connection::Connection;
 use crate::error::P2PResult;
-use crate::message::{Message, NetworkAddressWithoutTimestamp, Services, Timestamp};
+use crate::message::{Message, NetworkAddressWithoutTimestamp, Services, Timestamp, Version};
 
-pub struct NegotiatedVersion {
-    pub peer_version: u32,
+pub struct NegotiatedVersion { //TODO better name?
+    pub peer_version: Version,
     pub peer_services: Services,
 }
 
@@ -14,18 +13,14 @@ pub struct NegotiatedVersion {
 //TODO documentation - timeout via decorator
 pub async fn handshake(connection: &mut Connection) -> P2PResult<Option<NegotiatedVersion>> {
     connection.send(&Message::Version {
-        version: 0, //TODO config
-        services: Services::empty(), //TODO config
+        version: connection.config.my_version,
+        services: connection.config.my_services,
         timestamp: Timestamp::now(),
-        addr_recv: NetworkAddressWithoutTimestamp {
-            services: Services::empty(), //TODO config
-            addr: IpAddr::V4(Ipv4Addr::from([127, 0, 0, 1])), //TODO
-            port: 12345, //TODO
-        },
+        addr_recv: NetworkAddressWithoutTimestamp::new(&connection.peer_address, connection.config.as_ref()),
     }).await?;
 
     let verack_received = AtomicBool::new(false);
-    let mut peer_info = Mutex::new(None);
+    let peer_info = Mutex::new(None);
 
     loop {
         match connection.receive().await? {
@@ -38,8 +33,11 @@ pub async fn handshake(connection: &mut Connection) -> P2PResult<Option<Negotiat
                  }) => {
                 let mut lock = peer_info.lock().await;
                 *lock = Some((version, services));
+                connection.send(&Message::VerAck).await?;
             },
             Some(Message::VerAck) => verack_received.store(true, Ordering::Release),
+
+            // TODO ignore other messages as they are added
         }
 
         if verack_received.load(Ordering::Acquire) {
