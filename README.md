@@ -2,10 +2,23 @@
 This is my solution for the [Eiger coding challenge](https://github.com/eqlabs/recruitment-exercises/blob/master/node-handshake.md).
 It implements the initialization of a Bitcoin connection handshake.
 
+## Approaching the code
+
+The integration test in `client_server.rs` is a good starting point for looking at the code, it uses the top-level
+APIs in a more or less typical way.
+
+`connection.rs` (and `server.rs`) contain the APIs that application code would call initially, and that can have APIs
+to can guide gently to the rest of the code.
+
+`four_way_handshake.rs` holds the actual handshake algorithm that was at core of the challenge.
+
+`protocol.rs` (both in `generic` and in `bitcoin`) define the interaction between generic and protocol specific
+abstraction levels.
+
 ## Advanced Rust features
 
 The task at hand did not offer obvious ways to use macros or advanced lifetimes - I am familiar with them but refrained
-from introducing them in artificial ways.
+from introducing them in ways that felt unnecessary.
 
 ## Separation into generic and Bitcoin specific code
 
@@ -75,7 +88,7 @@ INFO  [integration_with_bitcoind] handshake with bitcoind successful
 was sent, and a `verack` message was received. There is a message that `Connection reset by peer` which is expected
 behavior - the integration test just drops the connection after handshake was completed.
 
-## Resources
+## Links
 
 * Bitcoin network protocol: https://en.bitcoin.it/wiki/Protocol_documentation
 * Bitcoin version handshake: https://en.bitcoin.it/wiki/Version_Handshake
