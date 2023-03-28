@@ -16,11 +16,15 @@ use crate::generic::protocol::P2PMessage;
 ///  address, everywhere except for Version messages
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct NetworkAddressWithoutTimestamp {
+    /// Services offered by a peer
     pub services: Services,
+    /// A peer's IP address
     pub addr: IpAddr,
+    /// A peer's port number
     pub port: u16,
 }
 impl NetworkAddressWithoutTimestamp {
+    /// Convenience factory
     pub fn new(peer_addr: &SocketAddr, config: &BitcoinConfig) -> NetworkAddressWithoutTimestamp {
         NetworkAddressWithoutTimestamp {
             services: config.my_services,
@@ -30,17 +34,46 @@ impl NetworkAddressWithoutTimestamp {
     }
 }
 
+/// A decoded command. The main reason for having this enum is to allow early parsing of a
+///  message's command string, before the payload is available.
+enum Command {
+    Version,
+    VerAck,
+}
+impl Command {
+    fn de(id: &[u8]) -> Option<Command> {
+        match id {
+            COMMAND_VERSION => Some(Self::Version),
+            COMMAND_VERACK => Some(Self::VerAck),
+            _ => None,
+        }
+    }
+}
+
+type CommandId = [u8; 12];
+
+const COMMAND_VERSION: &[u8] = b"version\0\0\0\0\0";
+const COMMAND_VERACK: &[u8] = b"verack\0\0\0\0\0\0";
+
+
 const MESSAGE_HEADER_LEN_ON_NETWORK: usize = 4 + 12 + 4 + 4; // magic + command + length + checksum
 const MESSAGE_HEADER_OFFS_PAYLOAD_LENGTH: usize = 4 + 12; // magic + command
 
+/// An enum with all (supported) messages of the Bitcoin protocol
 #[derive(Debug, Eq, PartialEq, Clone)]
 pub enum BitcoinMessage {
+    /// Primary message for initial handshake - send version information and other metadata
     Version {
+        /// protocol version
         version: BitcoinVersion,
+        /// offered services
         services: Services,
+        /// 'now'
         timestamp: Timestamp,
+        /// receiver
         addr_recv: NetworkAddressWithoutTimestamp,
     },
+    /// Ack message for `Version`
     VerAck,
 }
 impl BitcoinMessage {
@@ -52,7 +85,6 @@ impl BitcoinMessage {
     }
 
     fn payload(&self) -> Vec<u8> {
-        //TODO avoid copying?
         match self {
             BitcoinMessage::Version {
                 version,
@@ -105,7 +137,7 @@ impl P2PMessage<BitcoinProtocol> for BitcoinMessage {
 
     /// todo documentation: assumes that the buffer contains an entire message, panicking otherwise
     /// todo  always consumes a message, returning None if the message was not recognized
-    fn parse_message(buf: &mut BytesMut, config: &BitcoinConfig) -> Option<Self> {
+    fn de_ser(buf: &mut BytesMut, config: &BitcoinConfig) -> Option<Self> {
         let magic = buf.get_u32_le();
 
         let command_id = &buf[..size_of::<CommandId>()];
@@ -310,7 +342,7 @@ mod test {
 
     #[test]
     fn test_message_has_complete_message_too_big() {
-        let result = BitcoinMessage::has_complete_message(
+        let _result = BitcoinMessage::has_complete_message(
             &vec![
                 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01, 0x10, 0, 0, 0, 0, 0, 0,
             ],
@@ -318,7 +350,7 @@ mod test {
         );
         assert!(matches!(
             Err::<bool, BitcoinError>(BitcoinError::MessageTooBig),
-            result
+            _result
         ));
     }
 
@@ -368,7 +400,7 @@ mod test {
         let hash = hash.unwrap_or_else(|| hash_for_payload(payload));
 
         let mut buf = BytesMut::new();
-        buf.put_u32_le(test_config().my_bitcoin_network.ser());
+        buf.put_u32_le(magic);
         buf.put_slice(command);
         buf.put_u32_le(payload.len() as u32);
         buf.put_u32_le(hash);
@@ -385,7 +417,7 @@ mod test {
         let vec = message_data(magic, command, hash, payload);
         let mut buf = BytesMut::from(vec.deref());
         buf.put_slice(&vec![55, 66]);
-        let result = BitcoinMessage::parse_message(&mut buf, &test_config());
+        let result = BitcoinMessage::de_ser(&mut buf, &test_config());
         assert_eq!(buf.chunk(), vec![55, 66].deref());
         result
     }

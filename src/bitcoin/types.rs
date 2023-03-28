@@ -3,12 +3,18 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use bitflags::bitflags;
 use log::warn;
 
+/// An identifier for one of the well-known Bitcoin networks. Peers must be on the same network.
 #[derive(Eq, PartialEq, Clone, Copy, Debug)]
 pub enum BitcoinNetworkId {
+    /// main
     Main,
+    /// testnet/regtest
     TestNetRegTest,
+    /// testnet3
     TestNet3,
+    /// signet(default)
     SigNet,
+    /// namecoin
     NameCoin,
 }
 impl BitcoinNetworkId {
@@ -18,6 +24,7 @@ impl BitcoinNetworkId {
     const SIGNET: u32 = 0x40CF030A;
     const NAMECOIN: u32 = 0xFEB4BEF9;
 
+    /// return the network ID's magic number as its network representation
     pub fn ser(&self) -> u32 {
         match self {
             BitcoinNetworkId::Main => Self::MAIN,
@@ -28,6 +35,8 @@ impl BitcoinNetworkId {
         }
     }
 
+    /// translate a magic number to the Bitcoin network ID, or None if it is none of the
+    ///  well-known numbers
     pub fn de_ser(raw: u32) -> Option<Self> {
         match raw {
             Self::MAIN => Some(Self::Main),
@@ -41,18 +50,31 @@ impl BitcoinNetworkId {
 }
 
 bitflags! {
+    /// A bitmask representing a combination of services offered by a node - see the Bitcoin
+    ///  protocol documentation for details.
+    ///
+    /// Services are communicated during handshake, but their semantics are out of scope for this
+    ///  project - using `Services::empty()` is the safest bet for nodes that do nothing but handshake.
     #[derive(Eq, PartialEq, Debug, Clone, Copy)]
     pub struct Services: u64 {
+        /// see Bitcoin protocol documentation for details
         const NODE_NETWORK = 1;
+        /// see Bitcoin protocol documentation for details
         const NODE_GETUTXO = 2;
+        /// see Bitcoin protocol documentation for details
         const NODE_BLOOM = 4;
+        /// see Bitcoin protocol documentation for details
         const NODE_WITNESS = 8;
+        /// see Bitcoin protocol documentation for details
         const NODE_XTHIN = 16;
+        /// see Bitcoin protocol documentation for details
         const NODE_COMPACT_FILTERS = 64;
+        /// see Bitcoin protocol documentation for details
         const NODE_NETWORK_LIMITED = 1024;
     }
 }
 
+/// Bitcoin protocol version number.
 #[derive(Eq, PartialEq, Ord, PartialOrd, Clone, Copy, Debug)]
 pub struct BitcoinVersion(pub u32);
 
@@ -67,9 +89,11 @@ impl From<&BitcoinVersion> for u32 {
     }
 }
 
+/// Timestamp, encoding seconds since UNIX_EPOCH.
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct Timestamp(i64);
 impl Timestamp {
+    /// Current wall clock time
     pub fn now() -> Timestamp {
         let seconds = match SystemTime::now().duration_since(UNIX_EPOCH) {
             Ok(d) => match d.as_secs().try_into() {
@@ -87,30 +111,13 @@ impl Timestamp {
         Timestamp(seconds)
     }
 
+    /// get an Instant's wire representation
     pub fn ser(&self) -> i64 {
         self.0
     }
 
+    /// create an Instant from its wire representation
     pub fn de_ser(raw: i64) -> Self {
         Timestamp(raw)
     }
 }
-
-pub enum Command {
-    Version,
-    VerAck,
-}
-impl Command {
-    pub fn de(id: &[u8]) -> Option<Command> {
-        match id {
-            COMMAND_VERSION => Some(Self::Version),
-            COMMAND_VERACK => Some(Self::VerAck),
-            _ => None,
-        }
-    }
-}
-
-pub type CommandId = [u8; 12];
-
-pub const COMMAND_VERSION: &[u8] = b"version\0\0\0\0\0";
-pub const COMMAND_VERACK: &[u8] = b"verack\0\0\0\0\0\0";

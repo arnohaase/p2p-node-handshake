@@ -6,13 +6,21 @@ use crate::generic::connection::Connection;
 use crate::generic::four_way_handshake::{FourWayHandshakeProtocol, HandshakeMessageExtract};
 use crate::generic::protocol::P2PProtocol;
 
+/// Metadata about a peer, condensed as the result of initial handshake
 #[derive(Clone, Debug)]
 pub struct BitcoinPeerMetaData {
+    /// the peer's protocol version
     pub version: BitcoinVersion,
+    /// services offered by the peer
     pub services: Services,
 }
 
-pub struct BitcoinProtocol {}
+/// Bitcoin specifics to make the generic connection and handshake handling work for Bitcoin.
+///
+/// The struct has no fields, it is only for generically providing type aliases and associated
+///  functions.
+#[derive(Debug)]
+pub struct BitcoinProtocol;
 
 impl P2PProtocol for BitcoinProtocol {
     type Config = BitcoinConfig;
