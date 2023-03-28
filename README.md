@@ -27,10 +27,12 @@ carried away, and it makes for clean separation of concerns. Plus it allows for 
 
 ## Unit Tests
 
-Tokio does network I/O through traits, so the networking code (which is a lot of the code) is unit testable in 
-principle. But in my experience that has limited usefulness since integration tests using actual network interfaces
-causes the challenging bugs, and comprehensife unit tests were not explicitly called out as a priority. Plus it 
-would have been tedious work, so I decided to make it out-of-scope.
+The project has unit tests for message serialization and deserialization based on sample messages in the Bitcoin
+spec, but little unit test coverage beyond that. 
+
+Tokio does network I/O through traits, so the abstractions for unit tests are in place. But it would have been tedious
+work, and comprehensive unit tests were not explicitly called out as a priority, so I decided to treat it as 
+out-of-scope.
 
 ## Verifying the handshake with bitcoind
 
