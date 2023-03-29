@@ -186,7 +186,7 @@ impl P2PMessage<BitcoinProtocol> for BitcoinMessage {
         // the payload, determine the payload's length and hash from the written payload, and
         // overwrite the placeholders.
 
-        // If we are the first message in buf, then fixed offsets would work. But we don't want to
+        // If we are the first message in buf, then fixed offsets would work. But we shouldn't
         // rely on that.
         let offs_payload_len = buf.len();
         buf.put_u32_le(0);
