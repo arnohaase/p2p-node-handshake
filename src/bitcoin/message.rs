@@ -83,7 +83,7 @@ impl BitcoinMessage {
         }
     }
 
-    fn payload(&self) -> Vec<u8> {
+    fn put_payload(&self, buf: &mut BytesMut) {
         match self {
             BitcoinMessage::Version {
                 version,
@@ -91,30 +91,29 @@ impl BitcoinMessage {
                 timestamp,
                 addr_recv,
             } => {
-                let mut result = Vec::new();
-                (&mut result).put_u32_le(version.into());
-                (&mut result).put_u64_le(services.bits());
-                (&mut result).put_i64_le(timestamp.ser());
-                (&mut result).put_u64_le(addr_recv.services.bits());
+                buf.put_u32_le(version.into());
+                buf.put_u64_le(services.bits());
+                buf.put_i64_le(timestamp.ser());
+                buf.put_u64_le(addr_recv.services.bits());
                 match addr_recv.addr {
                     IpAddr::V4(addr) => {
-                        (&mut result).put_bytes(0, 12);
-                        (&mut result).put_slice(&addr.octets());
+                        buf.put_bytes(0, 12);
+                        buf.put_slice(&addr.octets());
                     }
                     IpAddr::V6(addr) => {
-                        (&mut result).put_slice(&addr.octets());
+                        buf.put_slice(&addr.octets());
                     }
                 }
-                (&mut result).put_u16(addr_recv.port);
+                buf.put_u16(addr_recv.port);
 
-                (&mut result).put_bytes(0, 26); // addr_from - safe to ignore, most implementations send dummy data
-                (&mut result).put_bytes(0, 8); // nonce - not part of the minimum set of fields, treated as out-of-scope
-                (&mut result).put_u8(0); // user agent - setting to 'empty'
-                (&mut result).put_u32_le(0); // last block received - treated as out-of-scope
-
-                result
+                buf.put_bytes(0, 26); // addr_from - safe to ignore, most implementations send dummy data
+                buf.put_bytes(0, 8); // nonce - not part of the minimum set of fields, treated as out-of-scope
+                buf.put_u8(0); // user agent - setting to 'empty'
+                buf.put_u32_le(0); // last block received - treated as out-of-scope
             }
-            BitcoinMessage::VerAck => vec![],
+            BitcoinMessage::VerAck => {
+                // empty payload
+            }
         }
     }
 }
@@ -178,12 +177,33 @@ impl P2PMessage<BitcoinProtocol> for BitcoinMessage {
     fn ser(&self, buf: &mut BytesMut, config: &BitcoinConfig) {
         buf.put_u32_le(config.my_bitcoin_network.ser());
         buf.put_slice(self.command_string());
-        let payload = self.payload();
-        buf.put_u32_le(payload.len().try_into().expect(
+
+        // A message header contains the payload's length and hash, and then the payload itself. A
+        // naive implementation could write the payload into a separate buffer, then determine its
+        // length and hash, and then write it - but that would incur the overhead of an additional
+        // copy of the payload.
+        // This implementation starts by writing placeholders for length and hash, then writing
+        // the payload, determine the payload's length and hash from the written payload, and
+        // overwrite the placeholders.
+
+        // If we are the first message in buf, then fixed offsets would work. But we don't want to
+        // rely on that.
+        let offs_payload_len = buf.len();
+        buf.put_u32_le(0);
+        let offs_hash = buf.len();
+        buf.put_u32_le(0);
+
+        let offs_start_payload = buf.len();
+        self.put_payload(buf);
+        let payload = &buf[offs_start_payload..];
+
+        let payload_len = payload.len().try_into().expect(
             "Correct code can never generate a payload with a size anywhere near u32 bounds",
-        ));
-        buf.put_u32_le(hash_for_payload(&payload));
-        buf.put_slice(&payload);
+        );
+        let payload_hash = hash_for_payload(payload);
+
+        (&mut buf[offs_payload_len..]).put_u32_le(payload_len);
+        (&mut buf[offs_hash..]).put_u32_le(payload_hash);
     }
 }
 
@@ -234,7 +254,7 @@ fn do_parse_ver_ack(_payload: &[u8]) -> Option<BitcoinMessage> {
 
 fn hash_for_payload(payload: &[u8]) -> u32 {
     let first_round = Sha256::digest(payload);
-    let second_round = Sha256::digest(&first_round);
+    let second_round = Sha256::digest(first_round);
     let mut buf: &[u8] = &second_round;
     buf.get_u32_le()
 }

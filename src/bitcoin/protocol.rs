@@ -39,7 +39,7 @@ impl FourWayHandshakeProtocol for BitcoinProtocol {
             services: connection.config().my_services,
             timestamp: Timestamp::now(),
             addr_recv: NetworkAddressWithoutTimestamp::new(
-                &connection.peer_address(),
+                connection.peer_address(),
                 connection.config(),
             ),
         }

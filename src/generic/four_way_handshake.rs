@@ -67,8 +67,9 @@ pub async fn four_way_handshake<P: FourWayHandshakeProtocol>(
     connection: &mut Connection<P>,
 ) -> Result<P::NegotiatedMetaData, P::Error> {
     // Initiate the handshake by sending a 'version' message
-    connection.send(&P::version_message(&connection)).await?;
+    connection.send(&P::version_message(connection)).await?;
 
+    #[allow(clippy::type_complexity)]
     let received_extracts: Mutex<(
         Option<P::ReceivedVersionExtract>,
         Option<P::ReceivedAckExtract>,
@@ -80,7 +81,7 @@ pub async fn four_way_handshake<P: FourWayHandshakeProtocol>(
             Some(message) => {
                 match P::categorize_incoming(&message) {
                     Some(HandshakeMessageExtract::Version(data)) => {
-                        connection.send(&P::ack_message(&connection, &data)).await?;
+                        connection.send(&P::ack_message(connection, &data)).await?;
 
                         let mut lock = received_extracts.lock().await;
                         lock.0 = Some(data);
