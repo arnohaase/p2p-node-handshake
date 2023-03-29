@@ -18,7 +18,12 @@ abstraction levels.
 ## Advanced Rust features
 
 The task at hand did not offer obvious ways to use macros or advanced lifetimes - I am familiar with them but refrained
-from introducing them in ways that felt unnecessary.
+from introducing them in ways that felt unnecessary. 
+
+I considered having connections hand out references to messages so they could reference the buffer instead of copying,
+putting handling code into a callback or wrapping the messages and implementing `Drop` to free up the buffer. But 
+Bitcoin handshake messages don't benefit because they consist of primitives rather than big strings or byte arrays, 
+so this felt artificial.
 
 ## Separation into generic and Bitcoin specific code
 
